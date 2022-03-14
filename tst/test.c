@@ -1,7 +1,11 @@
 #include "math/camera.h"
-#include "types/bit_helper.h"
+#include "types/bit.h"
 #include "types/timer.h"
-#include "types/assert_helper.h"
+#include "types/assert.h"
+#include "formats/bmp.h"
+#include "file/file.h"
+#include "platforms/platform.h"
+#include "platforms/thread.h"
 #include <stdio.h>
 
 void *ourAlloc(void *allocator, usz siz) {
@@ -14,115 +18,128 @@ void ourFree(void *allocator, struct Buffer buf) {
 	free(buf.ptr);
 }
 
-//TODO: Wrap this
+//Handling multi threaded tracing
 
-#pragma pack(push, 1)
+struct RaytracingThread {
 
-	struct BMPHeader {
-		u16 fileType;
-		u32 fileSize;
-		u16 r0, r1;
-		u32 offsetData;
-	};
-	
-	struct BMPInfoHeader {
-		u32 size;
-		i32 width, height;
-		u16 planes, bitCount;
-		u32 compression, compressedSize;
-		i32 xPixPerM, yPixPerM;
-		u32 colorsUsed, colorsImportant;
-	};
+	struct Thread *thread;
 
-	struct BMPColorHeader {
-		u32 redMask, greenMask, blueMask, alphaMask;
-		u32 colorSpaceType;
-		u32 unused[16];
-	};
+	struct Buffer imageBuf;
+	const struct Camera *cam;
 
-#pragma pack(pop)
+	const Sphere *spheres;
 
-const u16 BMP_magic = 0x4D42;
-const u32 BMP_srgbMagic = 0x73524742;
+	u32 sphereCount;
 
-struct Buffer BMP_write(struct Buffer buf, u16 w, u16 h) {
+	u16 yOffset, ySize;
+	u16 w, h;
 
-	ocAssert("BMP can only be up to 4GiB", buf.siz <= u32_MAX);
+	u32 skyColor;
+};
 
-	u32 headersSize = (u32) (
-		sizeof(struct BMPHeader) + 
-		sizeof(struct BMPInfoHeader) + 
-		sizeof(struct BMPColorHeader)
-	);
+#define SUPER_SAMPLING 4
+#define SUPER_SAMPLING2 (SUPER_SAMPLING * SUPER_SAMPLING)
 
-	struct BMPHeader header = (struct BMPHeader) {
-		.fileType = BMP_magic,
-		.fileSize = (u32) buf.siz,
-		.r0 = 0, .r1 = 0, 
-		.offsetData = headersSize
-	};
+void trace(struct RaytracingThread *rtThread) {
 
-	struct BMPInfoHeader infoHeader = (struct BMPInfoHeader) {
-		.size = sizeof(struct BMPInfoHeader),
-		.width = w,
-		.height = h,
-		.planes = 1,
-		.bitCount = 32,
-		.compression = 3,		//rgba8
-		.compressedSize = 0,
-		.xPixPerM = 0, .yPixPerM = 0,
-		.colorsUsed = 0, .colorsImportant = 0
-	};
+	struct Ray r;
+	struct Intersection inter;
 
-	struct BMPColorHeader colorHeader = (struct BMPColorHeader) {
+	const struct Camera *c = rtThread->cam;
+	struct Buffer *buf = &rtThread->imageBuf;
 
-		.redMask	= (u32) 0xFF << 16,
-		.greenMask	= (u32) 0xFF << 8,
-		.blueMask	= (u32) 0xFF,
-		.alphaMask	= (u32) 0xFF << 24,
+	u16 w = rtThread->w, h = rtThread->h;
 
-		.colorSpaceType = BMP_srgbMagic
-	};
+	for (u16 j = rtThread->yOffset, jMax = j + rtThread->ySize; j < jMax; ++j)
+		for (u16 i = 0; i < w; ++i) {
 
-	struct Buffer file = Bit_bytes(
-		headersSize + buf.siz,
-		ourAlloc,
-		NULL
-	);
+			f32x4 accum = Vec_zero();
 
-	struct Buffer fileAppend = file;
+			for(u16 jj = 0; jj < SUPER_SAMPLING; ++jj)
+				for(u16 ii = 0; ii < SUPER_SAMPLING; ++ii) {
 
-	Bit_append(&fileAppend, &header, sizeof(header));
-	Bit_append(&fileAppend, &infoHeader, sizeof(infoHeader));
-	Bit_append(&fileAppend, &colorHeader, sizeof(colorHeader));
-	Bit_appendBuffer(&fileAppend, buf);
+					Camera_genRay(c, &r, i, j, w, h, ii / (f32)SUPER_SAMPLING, jj / (f32)SUPER_SAMPLING);
 
-	return file;
+					Intersection_init(&inter);
+
+					//Get intersection
+
+					for (u32 k = 0; k < rtThread->sphereCount; ++k)
+						Sphere_intersect(rtThread->spheres[k], r, &inter, k);
+
+					//
+
+					f32x4 col;
+
+					if (inter.hitT >= 0) {
+
+						//Process intersection
+
+						f32x4 pos = Vec_add(r.originMinT, Vec_mul(r.dirMaxT, Vec_xxxx4(inter.hitT)));
+						f32x4 nrm = Vec_normalize3(Vec_sub(pos, rtThread->spheres[inter.object]));
+
+						f32x4 nrmCol = Vec_add(Vec_mul(nrm, Vec_xxxx4(.5f)), Vec_xxxx4(.5f));
+
+						col = nrmCol;
+					}
+
+					else col = Vec_srgba8Unpack(rtThread->skyColor);
+
+					accum = Vec_add(accum, col);
+				}
+
+			accum = Vec_div(accum, Vec_xxxx4(SUPER_SAMPLING2));
+
+			u32 packed = Vec_srgba8Pack(accum);
+			Bit_appendU32(buf, packed);
+		}
 }
 
-void File_write(struct Buffer buf, const c8 *loc) {
+void RaytracingThread_start(
+	struct RaytracingThread *rtThread,
+	u16 threadOff, u16 threadCount,
+	const Sphere *sph, u32 sphereCount,
+	const struct Camera *cam, u32 skyColor,
+	u16 renderWidth, u16 renderHeight, struct Buffer buf
+) {
+	u16 ySiz = renderHeight / threadCount;
+	u16 yOff = ySiz * threadOff;
 
-	ocAssert("Invalid file name or buffer", loc && buf.siz && buf.ptr);
+	if (threadOff == threadCount - 1)
+		ySiz += renderHeight % threadCount;
 
-	FILE *f = fopen(loc, "wb");
-	ocAssert("File not found", f);
+	usz stride = (usz)renderWidth * 4;
 
-	fwrite(buf.ptr, 1, buf.siz, f);
-	fclose(f);
+	*rtThread = (struct RaytracingThread) {
+		.imageBuf = Bit_subset(buf, (usz)yOff * stride, (usz)ySiz * stride),
+		.cam = cam,
+		.spheres = sph,
+		.sphereCount = sphereCount,
+		.yOffset = yOff,
+		.ySize = ySiz,
+		.w = renderWidth,
+		.h = renderHeight,
+		.skyColor = skyColor
+	};
 
+	rtThread->thread = Thread_start(trace, rtThread, ourAlloc, ourFree, NULL);
 }
 
-int main(int argc, const char *argv[]) {
+//
 
-	argc; argv;
+#define SPHERE_COUNT 4
 
-	//Init camera
+int Program_run() {
 
-	u16 renderWidth = 3840, renderHeight = 2560;
+	ns start = Timer_now();
 
-	quat dir = Quat_identity();
+	//Init camera, output locations and size and scene
+
+	u16 renderWidth = 1920, renderHeight = 1080;
+
+	quat dir = Quat_fromEuler(Vec_init3(0, -25, 0));
 	f32x4 origin = Vec_zero();
-	struct Camera cam = Camera_init(dir, origin, 80, .01f, 1000.f, renderWidth, renderHeight);
+	struct Camera cam = Camera_init(dir, origin, 45, .01f, 1000.f, renderWidth, renderHeight);
 
 	usz renderPixels = (usz)renderWidth * renderHeight;
 
@@ -132,54 +149,53 @@ int main(int argc, const char *argv[]) {
 
 	//Init spheres
 
-	Sphere sph[4] = { 
+	Sphere sph[SPHERE_COUNT] = { 
 		Sphere_init(Vec_init3(5, -2, 0), 1), 
 		Sphere_init(Vec_init3(5, 0, -2), 1), 
 		Sphere_init(Vec_init3(5, 0, 2),  1), 
 		Sphere_init(Vec_init3(5, 2, 0),  1)
 	};
 
-	u32 sphCols[4] = { 0xFFFF8000, 0xFF808000, 0xFF8000FF, 0xFF800000 };
-
-	//Output to screen
+	//Output image
 
 	struct Buffer buf = Bit_bytes(renderPixels << 2, ourAlloc, NULL);
-	struct Buffer appendBuf = buf;
 
-	ns start = Timer_now();
+	//Setup threads
 
-	struct Ray r;
-	struct Intersection inter;
+	u16 threadsToRun = (u16)Thread_getLogicalCores();
 
-	for (u16 j = 0; j < renderHeight; ++j)
-		for (u16 i = 0; i < renderWidth; ++i) {
+	usz threadsSize = sizeof(struct RaytracingThread) * threadsToRun;
 
-			Camera_genRay(&cam, &r, i, j, renderWidth, renderHeight);
+	struct RaytracingThread *threads = ourAlloc(NULL, threadsSize);
 
-			Intersection_init(&inter);
+	//Start threads
 
-			for (usz k = 0; k < sizeof(sph) / sizeof(sph[0]); ++k)
-				Sphere_intersect(sph[k], r, &inter, (u32) k);
+	for (u16 i = 0; i < threadsToRun; ++i)
+		RaytracingThread_start(
+			threads + i, i, threadsToRun,
+			sph, SPHERE_COUNT, 
+			&cam, skyColor, 
+			renderWidth, renderHeight, buf
+		);
 
-			if (!i || !j || i == renderWidth - 1 || j == renderHeight - 1) {
-				Bit_appendU32(&appendBuf, (i & 1 ? 0xFFFF0000 : 0xFF7F0000) | (j & 1 ? 0xFF : 0x7F));
-				continue;
-			}
+	//Clean up threads
 
-			if (inter.hitT < 0) {
-				Bit_appendU32(&appendBuf, skyColor);
-				continue;
-			}
+	for (usz i = 0; i < threadsToRun; ++i)
+		Thread_waitAndCleanup(&threads[i].thread, 0);
 
-			Bit_appendU32(&appendBuf, sphCols[inter.object]);
-		}
+	ourFree(NULL, (struct Buffer) { (u8*) threads, threadsSize });
 
-	struct Buffer file = BMP_write(buf, renderWidth, renderHeight);
+	//Output to file
+
+	struct Buffer file = BMP_writeRGBA(buf, renderWidth, renderHeight, false, ourAlloc, NULL);
 	File_write(file, outputBmp);
 	Bit_free(&file, ourFree, NULL);
 
-	printf("Finished in %fms\n", (f32)Timer_elapsed(start) / ms);
+	//Free image and tell how long it took
 
 	Bit_free(&buf, ourFree, NULL);
+
+	printf("Finished in %fms\n", (f32)Timer_elapsed(start) / ms);
+
 	return 0;
 }

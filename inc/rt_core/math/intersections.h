@@ -1,5 +1,5 @@
 #pragma once
-#include "types/transform.h"
+#include "math/transform.h"
 
 struct Ray {
 	f32x4 originMinT;

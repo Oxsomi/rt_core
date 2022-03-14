@@ -1,6 +1,6 @@
 #include "math/camera.h"
-#include "types/math_helper.h"
-#include "types/assert_helper.h"
+#include "math/math.h"
+#include "types/assert.h"
 
 struct Camera Camera_init(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u16 w, u16 h) {
 
@@ -29,12 +29,12 @@ struct Camera Camera_init(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u16 
 	};
 }
 
-void Camera_genRay(const struct Camera *c, struct Ray *ray, u16 x, u16 y, u16 w, u16 h) {
+void Camera_genRay(const struct Camera *c, struct Ray *ray, u16 x, u16 y, u16 w, u16 h, f32 jitterX, f32 jitterY) {
 
 	ocAssert("Out of bounds", x < w && y < h);
 
-	f32x4 right = Vec_mul(c->right, Vec_xxxx4((x + .5f) / w));
-	f32x4 up = Vec_mul(c->up, Vec_xxxx4((y + .5f) / h));
+	f32x4 right = Vec_mul(c->right, Vec_xxxx4((x + jitterX) / w));
+	f32x4 up = Vec_mul(c->up, Vec_xxxx4((y + jitterY) / h));
 
 	f32x4 pos = Vec_add(Vec_add(c->p0, right), up);
 	f32x4 dir = Vec_normalize3(Vec_sub(pos, c->transform.pos));

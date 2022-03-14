@@ -36,7 +36,7 @@ add_subdirectory(core3)
 
 target_include_directories(rt_core PRIVATE inc/rt_core)
 target_include_directories(rt_core PRIVATE core3/inc)
-target_link_libraries(rt_core PRIVATE typesOC3)
+target_link_libraries(rt_core PRIVATE core3_types core3_formats core3_platforms)
 
 file(GLOB_RECURSE tests "tst/*.c")
 
