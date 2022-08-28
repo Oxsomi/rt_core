@@ -2,11 +2,41 @@
 
 void Ray_init(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT) {
 
-	Vec_setW(&pos, minT);
-	Vec_setW(&dir, maxT);
+	f32x4_setW(&pos, minT);
+	f32x4_setW(&dir, maxT);
 
 	ray->originMinT = pos;
 	ray->dirMaxT = dir;
+}
+
+//Offset along a ray (solves self intersection), source:
+//http://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.7.pdf (chapter 6)
+
+const f32 origin = 1 / 32.0f;
+const f32 floatScale = 1 / 65536.0f;
+const f32 intScale = 256.0f;
+
+f32x4 Ray_offsetEpsilon(f32x4 pos, f32x4 gN) {
+
+	//TODO: int cast; not the same as floor with neg numbers
+	//		asfloat and asint as well as either Veci or manually writing ops
+
+	i32x4 offI = i32x4_fromF32x4(f32x4_mul(gN, f32x4_xxxx4(intScale)));
+
+	i32x4 delta = i32x4_mul(
+		i32x4_fromF32x4(f32x4_add(f32x4_mul(f32x4_lt(pos, f32x4_zero()), f32x4_negTwo()), f32x4_one())), 
+		offI
+	);
+
+	f32x4 pI = f32x4_bitsI32x4(i32x4_add(i32x4_bitsF32x4(pos), delta));
+
+	f32x4 apos = f32x4_abs(pos);
+
+	if(f32x4_x(apos) < origin) f32x4_setX(&pI, f32x4_x(pos) + floatScale * f32x4_x(gN));
+	if(f32x4_y(apos) < origin) f32x4_setY(&pI, f32x4_y(pos) + floatScale * f32x4_y(gN));
+	if(f32x4_z(apos) < origin) f32x4_setZ(&pI, f32x4_z(pos) + floatScale * f32x4_z(gN));
+
+	return pI;
 }
 
 void Intersection_init(struct Intersection *i) {
@@ -15,7 +45,7 @@ void Intersection_init(struct Intersection *i) {
 }
 
 Sphere Sphere_init(f32x4 pos, f32 rad) {
-	Vec_setW(&pos, Math_pow2f(rad));
+	f32x4_setW(&pos, Math_pow2f(rad));
 	return pos;
 }
 
@@ -23,7 +53,7 @@ bool Intersection_check(struct Intersection *i, struct Ray r, f32 t, u32 object)
 
 	bool beforeHit = i->hitT < 0 || t < i->hitT;
 
-	if (beforeHit && t < Vec_w(r.dirMaxT) && t >= Vec_w(r.originMinT)) {
+	if (beforeHit && t < f32x4_w(r.dirMaxT) && t >= f32x4_w(r.originMinT)) {
 		i->hitT = t;
 		i->object = object;
 		return true;
@@ -56,15 +86,15 @@ bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, u32 object
 
 	//Better one; 4 * d^2 * (r^2 - (f - (f.d)d)^2)
 
-	f32x4 f = Vec_sub(r.originMinT, s);
-	f32 b = -Vec_dot3(f, r.dirMaxT);
+	f32x4 f = f32x4_sub(r.originMinT, s);
+	f32 b = -f32x4_dot3(f, r.dirMaxT);
 
-	f32 r2 = Vec_w(s);
+	f32 r2 = f32x4_w(s);
 
-	f32 D = r2 - Vec_sqLen3(
-		Vec_add(f, Vec_mul(
+	f32 D = r2 - f32x4_sqLen3(
+		f32x4_add(f, f32x4_mul(
 			r.dirMaxT,
-			Vec_xxxx4(b)
+			f32x4_xxxx4(b)
 		))
 	);
 
@@ -80,7 +110,7 @@ bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, u32 object
 
 	//Two intersections
 
-	f32 c = Vec_sqLen3(f) - r2;
+	f32 c = f32x4_sqLen3(f) - r2;
 	f32 q = b + Math_signInc(b) * Math_sqrtf(D);
 
 	f32 o0 = c / q;

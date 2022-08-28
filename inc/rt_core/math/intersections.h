@@ -18,6 +18,8 @@ struct Intersection {
 };
 
 void Ray_init(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT);
+f32x4 Ray_offsetEpsilon(f32x4 pos, f32x4 gN);
+
 void Intersection_init(struct Intersection *i);
 Sphere Sphere_init(f32x4 pos, f32 rad);
 

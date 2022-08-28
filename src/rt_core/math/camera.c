@@ -9,14 +9,14 @@ struct Camera Camera_init(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u16 
 	
 	f32 nearPlaneLeft = Math_tan(fovRad * .5f);
 
-	struct Transform tr = Transform_init(q, pos, Vec_one());
+	struct Transform tr = Transform_init(q, pos, f32x4_one());
 
-	f32x4 p0 = Transform_apply(tr, Vec_init3(-aspect, 1,  -nearPlaneLeft));
-	f32x4 p1 = Transform_apply(tr, Vec_init3(aspect,  1,  -nearPlaneLeft));
-	f32x4 p2 = Transform_apply(tr, Vec_init3(-aspect, -1, -nearPlaneLeft));
+	f32x4 p0 = Transform_apply(tr, f32x4_init3(-aspect, 1,  -nearPlaneLeft));
+	f32x4 p1 = Transform_apply(tr, f32x4_init3(aspect,  1,  -nearPlaneLeft));
+	f32x4 p2 = Transform_apply(tr, f32x4_init3(-aspect, -1, -nearPlaneLeft));
 
-	f32x4 right = Vec_sub(p1, p0);
-	f32x4 up = Vec_sub(p2, p0);
+	f32x4 right = f32x4_sub(p1, p0);
+	f32x4 up = f32x4_sub(p2, p0);
 
 	return (struct Camera) {
 		.transform = tr,
@@ -33,11 +33,11 @@ void Camera_genRay(const struct Camera *c, struct Ray *ray, u16 x, u16 y, u16 w,
 
 	ocAssert("Out of bounds", x < w && y < h);
 
-	f32x4 right = Vec_mul(c->right, Vec_xxxx4((x + jitterX) / w));
-	f32x4 up = Vec_mul(c->up, Vec_xxxx4((y + jitterY) / h));
+	f32x4 right = f32x4_mul(c->right, f32x4_xxxx4((x + jitterX) / w));
+	f32x4 up = f32x4_mul(c->up, f32x4_xxxx4((y + jitterY) / h));
 
-	f32x4 pos = Vec_add(Vec_add(c->p0, right), up);
-	f32x4 dir = Vec_normalize3(Vec_sub(pos, c->transform.pos));
+	f32x4 pos = f32x4_add(f32x4_add(c->p0, right), up);
+	f32x4 dir = f32x4_normalize3(f32x4_sub(pos, c->transform.pos));
 
 	Ray_init(ray, c->transform.pos, c->near, dir, c->far);
 }

@@ -1,4 +1,6 @@
+#include "math/shading.h"
 #include "math/camera.h"
+#include "math/rand.h"
 #include "types/bit.h"
 #include "types/timer.h"
 #include "types/assert.h"
@@ -35,10 +37,15 @@ struct RaytracingThread {
 	u16 w, h;
 
 	u32 skyColor;
+
+	const struct Material *materials;
+	u32 materialCount;
+
+	const u64 *packedMaterialIds;
 };
 
-#define SUPER_SAMPLING 4
-#define SUPER_SAMPLING2 (SUPER_SAMPLING * SUPER_SAMPLING)
+#define SUPER_SAMPLING 1
+#define MAX_BOUNCES_U8 12
 
 void trace(struct RaytracingThread *rtThread) {
 
@@ -49,48 +56,115 @@ void trace(struct RaytracingThread *rtThread) {
 	struct Buffer *buf = &rtThread->imageBuf;
 
 	u16 w = rtThread->w, h = rtThread->h;
+	u32 frameId = 0;
+
+	u8 superSamp = SUPER_SAMPLING, superSamp2;
+
+	if (((w * SUPER_SAMPLING) < w) || ((h * SUPER_SAMPLING) < h))
+		superSamp = 1;
+
+	superSamp2 = superSamp * superSamp;
 
 	for (u16 j = rtThread->yOffset, jMax = j + rtThread->ySize; j < jMax; ++j)
 		for (u16 i = 0; i < w; ++i) {
 
-			f32x4 accum = Vec_zero();
+			f32x4 accum = f32x4_zero();
 
-			for(u16 jj = 0; jj < SUPER_SAMPLING; ++jj)
-				for(u16 ii = 0; ii < SUPER_SAMPLING; ++ii) {
+			for(u16 jj = 0; jj < superSamp; ++jj)
+				for(u16 ii = 0; ii < superSamp; ++ii) {
 
-					Camera_genRay(c, &r, i, j, w, h, ii / (f32)SUPER_SAMPLING, jj / (f32)SUPER_SAMPLING);
+					u32 seed = Random_seed(
+						i * superSamp + ii, j * superSamp+ jj, 
+						w * superSamp,
+						frameId
+					);
+
+					Camera_genRay(c, &r, i, j, w, h, ii / (f32)superSamp, jj / (f32)superSamp);
 
 					Intersection_init(&inter);
 
-					//Get intersection
+					f32x4 contrib = f32x4_one();
+					f32x4 col = f32x4_zero();
 
-					for (u32 k = 0; k < rtThread->sphereCount; ++k)
-						Sphere_intersect(rtThread->spheres[k], r, &inter, k);
+					for (u16 k = 0; k < 1 + (u16)MAX_BOUNCES_U8; ++k) {
 
-					//
+						//Get intersection
 
-					f32x4 col;
+						for (u32 l = 0; l < rtThread->sphereCount; ++l)
+							Sphere_intersect(rtThread->spheres[l], r, &inter, l);
 
-					if (inter.hitT >= 0) {
+						//
 
-						//Process intersection
+						if (inter.hitT >= 0) {
 
-						f32x4 pos = Vec_add(r.originMinT, Vec_mul(r.dirMaxT, Vec_xxxx4(inter.hitT)));
-						f32x4 nrm = Vec_normalize3(Vec_sub(pos, rtThread->spheres[inter.object]));
+							//Process intersection
 
-						f32x4 nrmCol = Vec_add(Vec_mul(nrm, Vec_xxxx4(.5f)), Vec_xxxx4(.5f));
+							f32x4 pos = f32x4_add(r.originMinT, f32x4_mul(r.dirMaxT, f32x4_xxxx4(inter.hitT)));
+							f32x4 nrm = f32x4_normalize3(f32x4_sub(pos, rtThread->spheres[inter.object]));
 
-						col = nrmCol;
+							//Grab material
+
+							u32 materialId = u64_unpack21x3(rtThread->packedMaterialIds[inter.object / 3], inter.object % 3);
+
+							if (materialId < rtThread->materialCount) {
+
+								struct Material m = rtThread->materials[materialId];
+
+								//Add emission at every intersection (should be removed if NEE handles this)
+
+								col = f32x4_add(col, Material_getEmissive(m));
+
+								//TODO: Add contribution from random light using NEE
+								//*Requires us to mark emissive primitives*
+
+								//To simplify, we will pick specular and diffuse about 50/50
+								//Meaning our probability is 1 / 0.5 = 2
+
+								f32 probability = 0.5f;
+								bool isSpecular = Random_sample(&seed) < 0.5f;
+
+								contrib = f32x4_mul(contrib, f32x4_xxxx4(1 / probability));
+
+								//Calculate real shading normal
+								//This is the same as geometry normal for spheres
+
+								f32x4 N = nrm;
+
+								//When using waves, we should stochastically pick for this warp, instead of per pixel
+								//And then multiply the entire warp by 2
+
+								f32x4 xi2 = Random_sample2(&seed);
+
+								if (isSpecular)
+									contrib = f32x4_mul(contrib, Shading_evalSpecular(xi2, m, &r, pos, N, nrm));
+
+								else contrib = f32x4_mul(contrib, Shading_evalDiffuse(xi2, m, &r, pos, N, nrm));
+
+								//There is no contribution, so we should stop
+
+								if (f32x4_w(r.originMinT) < 0)
+									break;
+							}
+
+							//Invalid material reached; show it as complete black
+
+							else break;
+						}
+
+						//We missed any geometry, this means we should hit the sky and we should terminate the ray
+
+						else {
+							col = f32x4_add(col, f32x4_mul(contrib, f32x4_srgba8Unpack(rtThread->skyColor)));
+							break;
+						}
 					}
 
-					else col = Vec_srgba8Unpack(rtThread->skyColor);
-
-					accum = Vec_add(accum, col);
+					accum = f32x4_add(accum, col);
 				}
 
-			accum = Vec_div(accum, Vec_xxxx4(SUPER_SAMPLING2));
+			accum = f32x4_div(accum, f32x4_xxxx4(superSamp2));
 
-			u32 packed = Vec_srgba8Pack(accum);
+			u32 packed = f32x4_srgba8Pack(accum);
 			Bit_appendU32(buf, packed);
 		}
 }
@@ -99,6 +173,8 @@ void RaytracingThread_start(
 	struct RaytracingThread *rtThread,
 	u16 threadOff, u16 threadCount,
 	const Sphere *sph, u32 sphereCount,
+	const struct Material *mat, u32 matCount,
+	const u64 *materialIds,
 	const struct Camera *cam, u32 skyColor,
 	u16 renderWidth, u16 renderHeight, struct Buffer buf
 ) {
@@ -119,7 +195,10 @@ void RaytracingThread_start(
 		.ySize = ySiz,
 		.w = renderWidth,
 		.h = renderHeight,
-		.skyColor = skyColor
+		.skyColor = skyColor,
+		.materials = mat,
+		.materialCount = matCount,
+		.packedMaterialIds = materialIds
 	};
 
 	rtThread->thread = Thread_start(trace, rtThread, ourAlloc, ourFree, NULL);
@@ -128,6 +207,7 @@ void RaytracingThread_start(
 //
 
 #define SPHERE_COUNT 4
+#define MATERIAL_COUNT 2
 
 int Program_run() {
 
@@ -137,8 +217,8 @@ int Program_run() {
 
 	u16 renderWidth = 1920, renderHeight = 1080;
 
-	quat dir = Quat_fromEuler(Vec_init3(0, -25, 0));
-	f32x4 origin = Vec_zero();
+	quat dir = Quat_fromEuler(f32x4_init3(0, -25, 0));
+	f32x4 origin = f32x4_zero();
 	struct Camera cam = Camera_init(dir, origin, 45, .01f, 1000.f, renderWidth, renderHeight);
 
 	usz renderPixels = (usz)renderWidth * renderHeight;
@@ -150,10 +230,32 @@ int Program_run() {
 	//Init spheres
 
 	Sphere sph[SPHERE_COUNT] = { 
-		Sphere_init(Vec_init3(5, -2, 0), 1), 
-		Sphere_init(Vec_init3(5, 0, -2), 1), 
-		Sphere_init(Vec_init3(5, 0, 2),  1), 
-		Sphere_init(Vec_init3(5, 2, 0),  1)
+		Sphere_init(f32x4_init3(5, -2, 0), 1), 
+		Sphere_init(f32x4_init3(5, 0, -2), 1), 
+		Sphere_init(f32x4_init3(5, 0, 2),  1), 
+		Sphere_init(f32x4_init3(5, 2, 0),  1)
+	};
+
+	struct Material material[MATERIAL_COUNT] = {
+
+		Material_initMetal(
+			f32x4_init3(1, 0, 0), 0,		//albedo, roughness
+			f32x4_xxxx4(0), 0,			//emissive, anisotropy
+			0, 0, 0						//clearcoat, clearcoatRoughness, transparency
+		),
+
+		Material_initDielectric(
+			f32x4_init3(0, 1, 0), 0.5,	//albedo, specular (*8%)
+			f32x4_xxxx4(0), 0,			//emissive, roughness
+			0, 0, 0, 0,					//clearcoat, clearcoatRoughness, sheen, sheenTint,
+			0, 0, 0, 0,					//subsurface, scatter distance, transparency, translucency, 
+			0, 0						//absorption multiplier, ior
+		)
+	};
+
+	u64 materialIds[(SPHERE_COUNT + 2) / 3] = {
+		u64_pack21x3(0, 1, 0),
+		u64_pack21x3(0, 0, 0)
 	};
 
 	//Output image
@@ -162,7 +264,7 @@ int Program_run() {
 
 	//Setup threads
 
-	u16 threadsToRun = (u16)Thread_getLogicalCores();
+	u16 threadsToRun = (u16) Math_maxu(u16_MAX, Thread_getLogicalCores());
 
 	usz threadsSize = sizeof(struct RaytracingThread) * threadsToRun;
 
@@ -174,13 +276,15 @@ int Program_run() {
 		RaytracingThread_start(
 			threads + i, i, threadsToRun,
 			sph, SPHERE_COUNT, 
+			material, MATERIAL_COUNT,
+			materialIds,
 			&cam, skyColor, 
 			renderWidth, renderHeight, buf
 		);
 
 	//Clean up threads
 
-	for (usz i = 0; i < threadsToRun; ++i)
+	for (u16 i = 0; i < threadsToRun; ++i)
 		Thread_waitAndCleanup(&threads[i].thread, 0);
 
 	ourFree(NULL, (struct Buffer) { (u8*) threads, threadsSize });
