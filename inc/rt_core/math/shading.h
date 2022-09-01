@@ -1,5 +1,6 @@
 #pragma once
 #include "types/material.h"
+#include "intersections.h"
 
 //Transform from tangent space
 

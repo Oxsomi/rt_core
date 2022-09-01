@@ -9,6 +9,7 @@
 #include "platforms/platform.h"
 #include "platforms/thread.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 void *ourAlloc(void *allocator, usz siz) {
 	allocator;
@@ -45,7 +46,7 @@ struct RaytracingThread {
 };
 
 #define SUPER_SAMPLING 1
-#define MAX_BOUNCES_U8 12
+#define MAX_BOUNCES_U8 0
 
 void trace(struct RaytracingThread *rtThread) {
 
@@ -56,7 +57,7 @@ void trace(struct RaytracingThread *rtThread) {
 	struct Buffer *buf = &rtThread->imageBuf;
 
 	u16 w = rtThread->w, h = rtThread->h;
-	u32 frameId = 0;
+	//u32 frameId = 0;
 
 	u8 superSamp = SUPER_SAMPLING, superSamp2;
 
@@ -73,11 +74,11 @@ void trace(struct RaytracingThread *rtThread) {
 			for(u16 jj = 0; jj < superSamp; ++jj)
 				for(u16 ii = 0; ii < superSamp; ++ii) {
 
-					u32 seed = Random_seed(
+					/*u32 seed = Random_seed(
 						i * superSamp + ii, j * superSamp+ jj, 
 						w * superSamp,
 						frameId
-					);
+					);*/
 
 					Camera_genRay(c, &r, i, j, w, h, ii / (f32)superSamp, jj / (f32)superSamp);
 
@@ -99,8 +100,8 @@ void trace(struct RaytracingThread *rtThread) {
 
 							//Process intersection
 
-							f32x4 pos = f32x4_add(r.originMinT, f32x4_mul(r.dirMaxT, f32x4_xxxx4(inter.hitT)));
-							f32x4 nrm = f32x4_normalize3(f32x4_sub(pos, rtThread->spheres[inter.object]));
+							//f32x4 pos = f32x4_add(r.originMinT, f32x4_mul(r.dirMaxT, f32x4_xxxx4(inter.hitT)));
+							//f32x4 nrm = f32x4_normalize3(f32x4_sub(pos, rtThread->spheres[inter.object]));
 
 							//Grab material
 
@@ -112,8 +113,11 @@ void trace(struct RaytracingThread *rtThread) {
 
 								//Add emission at every intersection (should be removed if NEE handles this)
 
-								col = f32x4_add(col, Material_getEmissive(m));
+								f32x4 emissive = f32x4_mul(f32x4_xxxx4(m.emissive), m.albedo);
 
+								col = f32x4_add(col, f32x4_add(emissive, m.albedo));
+
+								/*
 								//TODO: Add contribution from random light using NEE
 								//*Requires us to mark emissive primitives*
 
@@ -143,7 +147,7 @@ void trace(struct RaytracingThread *rtThread) {
 								//There is no contribution, so we should stop
 
 								if (f32x4_w(r.originMinT) < 0)
-									break;
+									break;*/
 							}
 
 							//Invalid material reached; show it as complete black
@@ -239,14 +243,14 @@ int Program_run() {
 	struct Material material[MATERIAL_COUNT] = {
 
 		Material_initMetal(
-			f32x4_init3(1, 0, 0), 0,		//albedo, roughness
-			f32x4_xxxx4(0), 0,			//emissive, anisotropy
+			f32x4_init3(1, 0, 0), 0,	//albedo, roughness
+			0, 0,						//emissive, anisotropy
 			0, 0, 0						//clearcoat, clearcoatRoughness, transparency
 		),
 
 		Material_initDielectric(
 			f32x4_init3(0, 1, 0), 0.5,	//albedo, specular (*8%)
-			f32x4_xxxx4(0), 0,			//emissive, roughness
+			0, 0,						//emissive, roughness
 			0, 0, 0, 0,					//clearcoat, clearcoatRoughness, sheen, sheenTint,
 			0, 0, 0, 0,					//subsurface, scatter distance, transparency, translucency, 
 			0, 0						//absorption multiplier, ior
@@ -264,7 +268,7 @@ int Program_run() {
 
 	//Setup threads
 
-	u16 threadsToRun = (u16) Math_maxu(u16_MAX, Thread_getLogicalCores());
+	u16 threadsToRun = (u16) Math_minu(u16_MAX, Thread_getLogicalCores());
 
 	usz threadsSize = sizeof(struct RaytracingThread) * threadsToRun;
 

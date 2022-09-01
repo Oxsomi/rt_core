@@ -14,9 +14,9 @@ void Shading_redirectRay(struct Ray *r, f32x4 pos, f32x4 gN, f32x4 L) {
 
 f32x4 Shading_getF0(struct Material m) {
 	return f32x4_lerp(
-		f32x4_xxxx4(0.08f * Material_getSpecular(m)),
-		Material_getAlbedo(m),
-		Material_getMetallic(m)
+		f32x4_xxxx4(0.08f * m.specular),
+		m.albedo,
+		m.metallic
 	);
 }
 
@@ -159,7 +159,7 @@ f32x4 Shading_evalSpecular(f32x4 xi, struct Material m, struct Ray *r, f32x4 pos
 
 	//Material params
 
-	f32 rough = Material_getRoughness(m);
+	f32 rough = m.roughness;
 	f32x4 F0 = Shading_getF0(m);
 
 	//Calculate L
@@ -214,10 +214,10 @@ f32x4 Shading_evalDiffuse(f32x4 xi, struct Material m, struct Ray *r, f32x4 pos,
 	f32 VoN = f32x4_satDot3(V, N);
 
 	f32x4 F0 = Shading_getF0(m);
-	f32x4 F = Shading_getFresnel(F0, VoN, Material_getRoughness(m));
+	f32x4 F = Shading_getFresnel(F0, VoN, m.roughness);
 
-	f32x4 dif = f32x4_mul(Material_getAlbedo(m), f32x4_sub(f32x4_one(), F));
+	f32x4 dif = f32x4_mul(m.albedo, f32x4_sub(f32x4_one(), F));
 
-	f32 multiplier = 1 / Math_pi * (1 - Material_getMetallic(m)) * (1 - Material_getTranslucency(m)) * NoL / pdf;
+	f32 multiplier = 1 / Math_pi * (1 - m.metallic) * (1 - m.translucency) * NoL / pdf;
 	return f32x4_mul(dif, f32x4_xxxx4(multiplier));
 }
