@@ -2,18 +2,18 @@
 #include "math/math.h"
 #include "types/assert.h"
 
-struct Camera Camera_init(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u16 w, u16 h) {
+struct Camera Camera_create(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u16 w, u16 h) {
 
-	f32 fovRad = fovDeg * Math_degToRad;
+	f32 fovRad = fovDeg * f32_degToRad;
 	f32 aspect = (f32)w / h;
 	
-	f32 nearPlaneLeft = Math_tan(fovRad * .5f);
+	f32 nearPlaneLeft = f32_tan(fovRad * .5f);
 
-	struct Transform tr = Transform_init(q, pos, Vec_one());
+	struct Transform tr = Transform_create(q, pos, Vec_one());
 
-	f32x4 p0 = Transform_apply(tr, Vec_init3(-aspect, 1,  -nearPlaneLeft));
-	f32x4 p1 = Transform_apply(tr, Vec_init3(aspect,  1,  -nearPlaneLeft));
-	f32x4 p2 = Transform_apply(tr, Vec_init3(-aspect, -1, -nearPlaneLeft));
+	f32x4 p0 = Transform_apply(tr, Vec_create3(-aspect, 1,  -nearPlaneLeft));
+	f32x4 p1 = Transform_apply(tr, Vec_create3(aspect,  1,  -nearPlaneLeft));
+	f32x4 p2 = Transform_apply(tr, Vec_create3(-aspect, -1, -nearPlaneLeft));
 
 	f32x4 right = Vec_sub(p1, p0);
 	f32x4 up = Vec_sub(p2, p0);
@@ -39,5 +39,5 @@ void Camera_genRay(const struct Camera *c, struct Ray *ray, u16 x, u16 y, u16 w,
 	f32x4 pos = Vec_add(Vec_add(c->p0, right), up);
 	f32x4 dir = Vec_normalize3(Vec_sub(pos, c->transform.pos));
 
-	Ray_init(ray, c->transform.pos, c->near, dir, c->far);
+	Ray_create(ray, c->transform.pos, c->near, dir, c->far);
 }

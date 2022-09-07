@@ -2,21 +2,12 @@
 #include "types/bit.h"
 #include "types/timer.h"
 #include "types/assert.h"
-#include "formats/bmp.h"
 #include "file/file.h"
+#include "formats/bmp.h"
 #include "platforms/platform.h"
 #include "platforms/thread.h"
+#include "platforms/window.h"
 #include <stdio.h>
-
-void *ourAlloc(void *allocator, usz siz) {
-	allocator;
-	return malloc(siz);
-}
-
-void ourFree(void *allocator, struct Buffer buf) {
-	allocator;
-	free(buf.ptr);
-}
 
 //Handling multi threaded tracing
 
@@ -60,7 +51,7 @@ void trace(struct RaytracingThread *rtThread) {
 
 					Camera_genRay(c, &r, i, j, w, h, ii / (f32)SUPER_SAMPLING, jj / (f32)SUPER_SAMPLING);
 
-					Intersection_init(&inter);
+					Intersection_create(&inter);
 
 					//Get intersection
 
@@ -95,7 +86,7 @@ void trace(struct RaytracingThread *rtThread) {
 		}
 }
 
-void RaytracingThread_start(
+void RaytracingThread_create(
 	struct RaytracingThread *rtThread,
 	u16 threadOff, u16 threadCount,
 	const Sphere *sph, u32 sphereCount,
@@ -111,7 +102,7 @@ void RaytracingThread_start(
 	usz stride = (usz)renderWidth * 4;
 
 	*rtThread = (struct RaytracingThread) {
-		.imageBuf = Bit_subset(buf, (usz)yOff * stride, (usz)ySiz * stride),
+		.imageBuf = Bit_createSubset(buf, (usz)yOff * stride, (usz)ySiz * stride),
 		.cam = cam,
 		.spheres = sph,
 		.sphereCount = sphereCount,
@@ -122,12 +113,21 @@ void RaytracingThread_start(
 		.skyColor = skyColor
 	};
 
-	rtThread->thread = Thread_start(trace, rtThread, ourAlloc, ourFree, NULL);
+	rtThread->thread = Thread_create(trace, rtThread);
 }
 
 //
 
-#define SPHERE_COUNT 4
+static const u16 renderWidth = 1920, renderHeight = 1080;
+static enum TextureFormat format = TextureFormat_rgba8;
+
+void writeBmp(struct Buffer buf, struct String outputBmp, struct Allocator alloc) {
+	struct Buffer file = BMP_writeRGBA(buf, renderWidth, renderHeight, false, alloc);
+	File_write(file, outputBmp);
+	Bit_free(&file, alloc);
+}
+
+void Program_exit() { }
 
 int Program_run() {
 
@@ -135,30 +135,35 @@ int Program_run() {
 
 	//Init camera, output locations and size and scene
 
-	u16 renderWidth = 1920, renderHeight = 1080;
-
-	quat dir = Quat_fromEuler(Vec_init3(0, -25, 0));
-	f32x4 origin = Vec_zero();
-	struct Camera cam = Camera_init(dir, origin, 45, .01f, 1000.f, renderWidth, renderHeight);
+	quat dir = Quat_fromEuler(Vec_create3(0, -25, 0));
+	struct Camera cam = Camera_create(dir, Vec_zero(), 45, .01f, 1000.f, renderWidth, renderHeight);
 
 	usz renderPixels = (usz)renderWidth * renderHeight;
 
 	u32 skyColor = 0xFF0080FF;
 
-	const c8 *outputBmp = "output.bmp";
-
 	//Init spheres
 
-	Sphere sph[SPHERE_COUNT] = { 
-		Sphere_init(Vec_init3(5, -2, 0), 1), 
-		Sphere_init(Vec_init3(5, 0, -2), 1), 
-		Sphere_init(Vec_init3(5, 0, 2),  1), 
-		Sphere_init(Vec_init3(5, 2, 0),  1)
+	Sphere sph[] = { 
+		Sphere_create(Vec_create3(5, -2, 0), 1), 
+		Sphere_create(Vec_create3(5, 0, -2), 1), 
+		Sphere_create(Vec_create3(5, 0, 2),  1), 
+		Sphere_create(Vec_create3(5, 2, 0),  1)
 	};
+
+	usz spheres = sizeof(sph) / sizeof(sph[0]);
 
 	//Output image
 
-	struct Buffer buf = Bit_bytes(renderPixels << 2, ourAlloc, NULL);
+	struct Buffer buf = (struct Buffer){ 0 };
+	
+	struct Error err = Bit_createBytes(
+		renderPixels * TextureFormat_getSize(format, 1, 1), Platform_instance.alloc,
+		&buf
+	);
+
+	if(err.genericError)
+		return 1;
 
 	//Setup threads
 
@@ -171,9 +176,9 @@ int Program_run() {
 	//Start threads
 
 	for (u16 i = 0; i < threadsToRun; ++i)
-		RaytracingThread_start(
+		RaytracingThread_create(
 			threads + i, i, threadsToRun,
-			sph, SPHERE_COUNT, 
+			sph, spheres, 
 			&cam, skyColor, 
 			renderWidth, renderHeight, buf
 		);
@@ -185,17 +190,32 @@ int Program_run() {
 
 	ourFree(NULL, (struct Buffer) { (u8*) threads, threadsSize });
 
-	//Output to file
-
-	struct Buffer file = BMP_writeRGBA(buf, renderWidth, renderHeight, false, ourAlloc, NULL);
-	File_write(file, outputBmp);
-	Bit_free(&file, ourFree, NULL);
-
-	//Free image and tell how long it took
-
-	Bit_free(&buf, ourFree, NULL);
+	//Finished render
 
 	printf("Finished in %fms\n", (f32)Timer_elapsed(start) / ms);
+
+	//Put everything onto our screen
+
+	struct Window *wind = Window_create(
+		Vec_zero(), Vec_create2(renderWidth, renderHeight), 
+		WindowHint_DisableResize, String_createRefUnsafe("Rt core test"),
+		(struct WindowCallbacks){ 0 },
+		(enum WindowFormat) format
+	);
+
+	if(Window_isVirtual(wind))
+		writeBmp(buf, String_createRefUnsafe("output.bmp"), Platform_instance.alloc);
+
+	else Window_present(wind, buf, (enum WindowFormat) format);
+
+	//Free image
+
+	Bit_free(&buf, Platform_instance.alloc);
+
+	//Wait for user to close the window
+
+	Window_waitForExit(wind);
+	Window_free(&wind, Platform_instance.alloc);
 
 	return 0;
 }

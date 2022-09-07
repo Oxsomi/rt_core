@@ -1,6 +1,6 @@
 #include "math/intersections.h"
 
-void Ray_init(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT) {
+void Ray_create(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT) {
 
 	Vec_setW(&pos, minT);
 	Vec_setW(&dir, maxT);
@@ -9,13 +9,13 @@ void Ray_init(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT) {
 	ray->dirMaxT = dir;
 }
 
-void Intersection_init(struct Intersection *i) {
+void Intersection_create(struct Intersection *i) {
 	i->hitT = -1;
 	i->object = u32_MAX;
 }
 
-Sphere Sphere_init(f32x4 pos, f32 rad) {
-	Vec_setW(&pos, Math_pow2f(rad));
+Sphere Sphere_create(f32x4 pos, f32 rad) {
+	Vec_setW(&pos, f32_pow2(rad));
 	return pos;
 }
 
@@ -81,7 +81,7 @@ bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, u32 object
 	//Two intersections
 
 	f32 c = Vec_sqLen3(f) - r2;
-	f32 q = b + Math_signInc(b) * Math_sqrtf(D);
+	f32 q = b + f32_signInc(b) * f32_sqrt(D);
 
 	f32 o0 = c / q;
 	f32 o1 = q;
