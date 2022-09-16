@@ -25,7 +25,7 @@ struct Material {
 
 //Constructors
 
-struct Material Material_init(
+struct Material Material_create(
 	f32x4 albedo, f32 metallic,
 	f32 emissive, f32 roughness,
 	f32 specular, f32 anisotropy, f32 clearcoat, f32 clearcoatRoughness,
@@ -33,12 +33,12 @@ struct Material Material_init(
 	f32 transparency, f32 translucency, f32 absorptionMultiplier, f32 ior
 );
 
-inline struct Material Material_initMetal(
+inline struct Material Material_createMetal(
 	f32x4 albedo, f32 roughness,
 	f32 emissive, f32 anisotropy,
 	f32 clearcoat, f32 clearcoatRoughness, f32 transparency
 ) {
-	return Material_init(
+	return Material_create(
 		albedo, 1,
 		emissive, roughness,
 		0, anisotropy, clearcoat, clearcoatRoughness, 
@@ -47,14 +47,14 @@ inline struct Material Material_initMetal(
 	);
 }
 
-inline struct Material Material_initDielectric(
+inline struct Material Material_createDielectric(
 	f32x4 albedo, f32 specular,
 	f32 emissive, f32 roughness,
 	f32 clearcoat, f32 clearcoatRoughness, f32 sheen, f32 sheenTint,
 	f32 subsurface, f32 scatterDistance, f32 transparency, f32 translucency,
 	f32 absorptionMultiplier, f32 ior
 ) {
-	return Material_init(
+	return Material_create(
 		albedo, 0,
 		emissive, roughness,
 		specular, 0, clearcoat, clearcoatRoughness,

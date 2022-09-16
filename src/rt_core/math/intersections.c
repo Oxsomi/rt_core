@@ -1,6 +1,6 @@
 #include "math/intersections.h"
 
-void Ray_init(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT) {
+void Ray_create(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT) {
 
 	f32x4_setW(&pos, minT);
 	f32x4_setW(&dir, maxT);
@@ -39,12 +39,12 @@ f32x4 Ray_offsetEpsilon(f32x4 pos, f32x4 gN) {
 	return pI;
 }
 
-void Intersection_init(struct Intersection *i) {
+void Intersection_create(struct Intersection *i) {
 	i->hitT = -1;
 	i->object = u32_MAX;
 }
 
-Sphere Sphere_init(f32x4 pos, f32 rad) {
+Sphere Sphere_create(f32x4 pos, f32 rad) {
 	f32x4_setW(&pos, Math_pow2f(rad));
 	return pos;
 }

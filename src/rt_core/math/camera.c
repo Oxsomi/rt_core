@@ -2,7 +2,7 @@
 #include "math/math.h"
 #include "types/assert.h"
 
-struct Camera Camera_init(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u16 w, u16 h) {
+struct Camera Camera_create(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u16 w, u16 h) {
 
 	f32 fovRad = fovDeg * Math_degToRad;
 	f32 aspect = (f32)w / h;
@@ -39,5 +39,5 @@ void Camera_genRay(const struct Camera *c, struct Ray *ray, u16 x, u16 y, u16 w,
 	f32x4 pos = f32x4_add(f32x4_add(c->p0, right), up);
 	f32x4 dir = f32x4_normalize3(f32x4_sub(pos, c->transform.pos));
 
-	Ray_init(ray, c->transform.pos, c->near, dir, c->far);
+	Ray_create(ray, c->transform.pos, c->near, dir, c->far);
 }

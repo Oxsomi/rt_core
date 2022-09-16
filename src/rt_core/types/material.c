@@ -1,6 +1,6 @@
 #include "types/material.h"
 
-struct Material Material_init(
+struct Material Material_create(
 	f32x4 albedo, f32 metallic,
 	f32 emissive, f32 roughness,
 	f32 specular, f32 anisotropy, f32 clearcoat, f32 clearcoatRoughness,

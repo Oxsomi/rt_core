@@ -17,11 +17,11 @@ struct Intersection {
 	u32 object;
 };
 
-void Ray_init(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT);
+void Ray_create(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT);
 f32x4 Ray_offsetEpsilon(f32x4 pos, f32x4 gN);
 
-void Intersection_init(struct Intersection *i);
-Sphere Sphere_init(f32x4 pos, f32 rad);
+void Intersection_create(struct Intersection *i);
+Sphere Sphere_create(f32x4 pos, f32 rad);
 
 bool Intersection_check(struct Intersection *i, struct Ray r, f32 t, u32 objectId);
 bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, u32 objectId);
