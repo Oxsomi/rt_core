@@ -2,26 +2,26 @@
 #include "math/transform.h"
 
 struct Ray {
-	f32x4 originMinT;
-	f32x4 dirMaxT;
+	F32x4 originMinT;
+	F32x4 dirMaxT;
 };
 
-typedef f32x4 Sphere;		//originRadius2
+typedef F32x4 Sphere;		//originRadius2
 
 struct AABB {
-	f32x4 mi, ma;
+	F32x4 mi, ma;
 };
 
 struct Intersection {
-	f32 hitT;
-	u32 object;
+	F32 hitT;
+	U32 object;
 };
 
-void Ray_create(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT);
-f32x4 Ray_offsetEpsilon(f32x4 pos, f32x4 gN);
+void Ray_create(struct Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT);
+F32x4 Ray_offsetEpsilon(F32x4 pos, F32x4 gN);
 
 void Intersection_create(struct Intersection *i);
-Sphere Sphere_create(f32x4 pos, f32 rad);
+Sphere Sphere_create(F32x4 pos, F32 rad);
 
-bool Intersection_check(struct Intersection *i, struct Ray r, f32 t, u32 objectId);
-bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, u32 objectId);
+Bool Intersection_check(struct Intersection *i, struct Ray r, F32 t, U32 objectId);
+Bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, U32 objectId);

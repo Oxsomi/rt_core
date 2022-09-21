@@ -15,28 +15,28 @@ enum MaterialTexture {
 };
 
 struct Material {
-	u64 textures[(MaterialTexture_Count + 2) / 3];			//Packed u21[3][2]
-	f32x4 albedo;
-	f32 emissive, roughness, metallic; u32 flags;
-	f32 specular, anisotropy, clearcoat, clearcoatRoughness;
-	f32 sheen, sheenTint, subsurface, scatterDistance;
-	f32 transparency, translucency, absorptionMultiplier, ior;
+	U64 textures[(MaterialTexture_Count + 2) / 3];			//Packed u21[3][2]
+	F32x4 albedo;
+	F32 emissive, roughness, metallic; U32 flags;
+	F32 specular, anisotropy, clearcoat, clearcoatRoughness;
+	F32 sheen, sheenTint, subsurface, scatterDistance;
+	F32 transparency, translucency, absorptionMultiplier, ior;
 };
 
 //Constructors
 
 struct Material Material_create(
-	f32x4 albedo, f32 metallic,
-	f32 emissive, f32 roughness,
-	f32 specular, f32 anisotropy, f32 clearcoat, f32 clearcoatRoughness,
-	f32 sheen, f32 sheenTint, f32 subsurface, f32 scatterDistance,
-	f32 transparency, f32 translucency, f32 absorptionMultiplier, f32 ior
+	F32x4 albedo, F32 metallic,
+	F32 emissive, F32 roughness,
+	F32 specular, F32 anisotropy, F32 clearcoat, F32 clearcoatRoughness,
+	F32 sheen, F32 sheenTint, F32 subsurface, F32 scatterDistance,
+	F32 transparency, F32 translucency, F32 absorptionMultiplier, F32 ior
 );
 
 inline struct Material Material_createMetal(
-	f32x4 albedo, f32 roughness,
-	f32 emissive, f32 anisotropy,
-	f32 clearcoat, f32 clearcoatRoughness, f32 transparency
+	F32x4 albedo, F32 roughness,
+	F32 emissive, F32 anisotropy,
+	F32 clearcoat, F32 clearcoatRoughness, F32 transparency
 ) {
 	return Material_create(
 		albedo, 1,
@@ -48,11 +48,11 @@ inline struct Material Material_createMetal(
 }
 
 inline struct Material Material_createDielectric(
-	f32x4 albedo, f32 specular,
-	f32 emissive, f32 roughness,
-	f32 clearcoat, f32 clearcoatRoughness, f32 sheen, f32 sheenTint,
-	f32 subsurface, f32 scatterDistance, f32 transparency, f32 translucency,
-	f32 absorptionMultiplier, f32 ior
+	F32x4 albedo, F32 specular,
+	F32 emissive, F32 roughness,
+	F32 clearcoat, F32 clearcoatRoughness, F32 sheen, F32 sheenTint,
+	F32 subsurface, F32 scatterDistance, F32 transparency, F32 translucency,
+	F32 absorptionMultiplier, F32 ior
 ) {
 	return Material_create(
 		albedo, 0,
@@ -65,36 +65,36 @@ inline struct Material Material_createDielectric(
 
 //Getters
 
-inline u32 Material_getTexture(struct Material m, enum MaterialTexture off) { 
+inline U32 Material_getTexture(struct Material m, enum MaterialTexture off) { 
 
 	if (off >= MaterialTexture_Count)
-		return u32_MAX;		//Out of bounds
+		return U32_MAX;		//Out of bounds
 
-	return u64_unpack21x3(m.textures[off / 3], off % 3);
+	return U64_unpack21x3(m.textures[off / 3], off % 3);
 }
 
-inline bool Material_getFlag(struct Material m, u8 off) { 
+inline Bool Material_getFlag(struct Material m, U8 off) { 
 
 	if (off >= 32)
 		return false;		//Out of bounds
 
-	return u32_getBit(m.flags, off);
+	return U32_getBit(m.flags, off);
 }
 
 //Setters
 
-inline bool Material_setTexture(struct Material *m, enum MaterialTexture off, u32 textureId) { 
+inline Bool Material_setTexture(struct Material *m, enum MaterialTexture off, U32 textureId) { 
 
 	if (!m || off >= MaterialTexture_Count)
 		return false;
 
-	return u64_setPacked21x3(&m->textures[off / 3], off % 3, textureId);
+	return U64_setPacked21x3(&m->textures[off / 3], off % 3, textureId);
 }
 
-inline bool Material_setFlag(struct Material *m, u8 off, bool b) {
+inline Bool Material_setFlag(struct Material *m, U8 off, Bool b) {
 
 	if (off >= 32 || !m)
 		return false;
 
-	return u32_setBit(&m->flags, off, b);
+	return U32_setBit(&m->flags, off, b);
 }

@@ -24,17 +24,17 @@ struct RaytracingThread {
 
 	const Sphere *spheres;
 
-	f32x4 skyColor;
+	F32x4 skyColor;
 
-	u32 sphereCount;
+	U32 sphereCount;
 
-	u16 yOffset, ySize;
-	u16 w, h;
+	U16 yOffset, ySize;
+	U16 w, h;
 
 	const struct Material *materials;
-	u32 materialCount;
+	U32 materialCount;
 
-	const u64 *packedMaterialIds;
+	const U64 *packedMaterialIds;
 
 	enum WindowFormat format;
 };
@@ -50,11 +50,11 @@ void trace(struct RaytracingThread *rtThread) {
 	const struct Camera *c = rtThread->cam;
 	struct Buffer *buf = &rtThread->imageBuf;
 
-	u16 w = rtThread->w, h = rtThread->h;
-	//u32 frameId = 0;
+	U16 w = rtThread->w, h = rtThread->h;
+	//U32 frameId = 0;
 
-	u8 superSamp = SUPER_SAMPLING, superSamp2;
-	f32 invSuperSampf = 1.f / superSamp;
+	U8 superSamp = SUPER_SAMPLING, superSamp2;
+	F32 invSuperSampf = 1.f / superSamp;
 
 	if (((w * SUPER_SAMPLING) < w) || ((h * SUPER_SAMPLING) < h))
 		superSamp = 1;
@@ -63,15 +63,15 @@ void trace(struct RaytracingThread *rtThread) {
 
 	struct Error err = (struct Error) { 0 };
 
-	for (u16 j = rtThread->yOffset, jMax = j + rtThread->ySize; j < jMax; ++j)
-		for (u16 i = 0; i < w; ++i) {
+	for (U16 j = rtThread->yOffset, jMax = j + rtThread->ySize; j < jMax; ++j)
+		for (U16 i = 0; i < w; ++i) {
 
-			f32x4 accum = f32x4_zero();
+			F32x4 accum = F32x4_zero();
 
-			for(u16 jj = 0; jj < superSamp; ++jj)
-				for(u16 ii = 0; ii < superSamp; ++ii) {
+			for(U16 jj = 0; jj < superSamp; ++jj)
+				for(U16 ii = 0; ii < superSamp; ++ii) {
 
-					/*u32 seed = Random_seed(
+					/*U32 seed = Random_seed(
 						i * superSamp + ii, j * superSamp+ jj, 
 						w * superSamp,
 						frameId
@@ -81,14 +81,14 @@ void trace(struct RaytracingThread *rtThread) {
 
 					Intersection_create(&inter);
 
-					f32x4 contrib = f32x4_one();
-					f32x4 col = f32x4_zero();
+					F32x4 contrib = F32x4_one();
+					F32x4 col = F32x4_zero();
 
-					for (u16 k = 0; k < 1 + (u16)MAX_BOUNCES_U8; ++k) {
+					for (U16 k = 0; k < 1 + (U16)MAX_BOUNCES_U8; ++k) {
 
 						//Get intersection
 
-						for (u32 l = 0; l < rtThread->sphereCount; ++l)
+						for (U32 l = 0; l < rtThread->sphereCount; ++l)
 							Sphere_intersect(rtThread->spheres[l], r, &inter, l);
 
 						//
@@ -97,12 +97,12 @@ void trace(struct RaytracingThread *rtThread) {
 
 							//Process intersection
 
-							//f32x4 pos = f32x4_add(r.originMinT, f32x4_mul(r.dirMaxT, f32x4_xxxx4(inter.hitT)));
-							//f32x4 nrm = f32x4_normalize3(f32x4_sub(pos, rtThread->spheres[inter.object]));
+							//F32x4 pos = F32x4_add(r.originMinT, F32x4_mul(r.dirMaxT, F32x4_xxxx4(inter.hitT)));
+							//F32x4 nrm = F32x4_normalize3(F32x4_sub(pos, rtThread->spheres[inter.object]));
 
 							//Grab material
 
-							u32 materialId = u64_unpack21x3(rtThread->packedMaterialIds[inter.object / 3], inter.object % 3);
+							U32 materialId = U64_unpack21x3(rtThread->packedMaterialIds[inter.object / 3], inter.object % 3);
 
 							if (materialId < rtThread->materialCount) {
 
@@ -110,9 +110,9 @@ void trace(struct RaytracingThread *rtThread) {
 
 								//Add emission at every intersection (should be removed if (//TODO:) NEE handles this)
 
-								f32x4 emissive = f32x4_mul(f32x4_xxxx4(m.emissive), m.albedo);
+								F32x4 emissive = F32x4_mul(F32x4_xxxx4(m.emissive), m.albedo);
 
-								col = f32x4_add(col, f32x4_add(emissive, m.albedo));
+								col = F32x4_add(col, F32x4_add(emissive, m.albedo));
 
 								break;		//TODO: No bounces yet
 
@@ -123,29 +123,29 @@ void trace(struct RaytracingThread *rtThread) {
 								//To simplify, we will pick specular and diffuse about 50/50
 								//Meaning our probability is 1 / 0.5 = 2
 
-								f32 probability = 0.5f;
-								bool isSpecular = Random_sample(&seed) < 0.5f;
+								F32 probability = 0.5f;
+								Bool isSpecular = Random_sample(&seed) < 0.5f;
 
-								contrib = f32x4_mul(contrib, f32x4_xxxx4(1 / probability));
+								contrib = F32x4_mul(contrib, F32x4_xxxx4(1 / probability));
 
 								//Calculate real shading normal
 								//This is the same as geometry normal for spheres
 
-								f32x4 N = nrm;
+								F32x4 N = nrm;
 
 								//When using waves, we should stochastically pick for this warp, instead of per pixel
 								//And then multiply the entire warp by 2
 
-								f32x4 xi2 = Random_sample2(&seed);
+								F32x4 xi2 = Random_sample2(&seed);
 
 								if (isSpecular)
-									contrib = f32x4_mul(contrib, Shading_evalSpecular(xi2, m, &r, pos, N, nrm));
+									contrib = F32x4_mul(contrib, Shading_evalSpecular(xi2, m, &r, pos, N, nrm));
 
-								else contrib = f32x4_mul(contrib, Shading_evalDiffuse(xi2, m, &r, pos, N, nrm));
+								else contrib = F32x4_mul(contrib, Shading_evalDiffuse(xi2, m, &r, pos, N, nrm));
 
 								//There is no contribution, so we should stop
 
-								if (f32x4_w(r.originMinT) < 0)
+								if (F32x4_w(r.originMinT) < 0)
 									break;*/
 							}
 
@@ -157,17 +157,17 @@ void trace(struct RaytracingThread *rtThread) {
 						//We missed any geometry, this means we should hit the sky and we should terminate the ray
 
 						else {
-							col = f32x4_add(col, f32x4_mul(contrib, rtThread->skyColor));
+							col = F32x4_add(col, F32x4_mul(contrib, rtThread->skyColor));
 							break;
 						}
 					}
 
-					accum = f32x4_add(accum, col);
+					accum = F32x4_add(accum, col);
 				}
 
-			accum = f32x4_mul(accum, f32x4_xxxx4(1.f / superSamp2));
+			accum = F32x4_mul(accum, F32x4_xxxx4(1.f / superSamp2));
 
-			bool is32Bit = true;
+			Bool is32Bit = true;
 
 			switch (rtThread->format) {
 
@@ -177,7 +177,7 @@ void trace(struct RaytracingThread *rtThread) {
 					break;
 
 				case WindowFormat_rgba16f:
-					err = Bit_appendI32x2(buf, f32x4_packRgba16f(accum));		//TODO: Rgba16f pack
+					err = Bit_appendI32x2(buf, F32x4_packRgba16f(accum));		//TODO: Rgba16f pack
 					is32Bit = false;
 					break;
 			}
@@ -195,7 +195,7 @@ void trace(struct RaytracingThread *rtThread) {
 
 			//TODO: HDR10 pack
 
-			u32 packed = rtThread->format == WindowFormat_rgba8 ? f32x4_srgba8Pack(accum) : f32x4_hdr10Pack(accum);
+			U32 packed = rtThread->format == WindowFormat_rgba8 ? F32x4_srgba8Pack(accum) : F32x4_hdr10Pack(accum);
 			err = Bit_appendU32(buf, packed);
 
 			if (err.genericError) {		//Quit rendering, something really bad happened
@@ -210,29 +210,29 @@ struct Error RaytracingThread_start(
 
 	struct RaytracingThread *rtThread,
 
-	u16 threadOff, u16 threadCount,
-	const Sphere *sph, u32 sphereCount,
-	const struct Material *mat, u32 matCount,
-	const u64 *materialIds,
-	const struct Camera *cam, f32x4 skyColor,
+	U16 threadOff, U16 threadCount,
+	const Sphere *sph, U32 sphereCount,
+	const struct Material *mat, U32 matCount,
+	const U64 *materialIds,
+	const struct Camera *cam, F32x4 skyColor,
 
 	struct Window *w
 
 ) {
-	u16 renderWidth = (u16) i32x2_x(w->size);
-	u16 renderHeight = (u16) i32x2_y(w->size);
+	U16 renderWidth = (U16) I32x2_x(w->size);
+	U16 renderHeight = (U16) I32x2_y(w->size);
 
-	u16 ySiz = renderHeight / threadCount;
-	u16 yOff = ySiz * threadOff;
+	U16 ySiz = renderHeight / threadCount;
+	U16 yOff = ySiz * threadOff;
 
 	if (threadOff == threadCount - 1)
 		ySiz += renderHeight % threadCount;
 
-	usz stride = (usz)renderWidth * (TextureFormat_getBits((enum TextureFormat) w->format) / 8);
+	U64 stride = (U64)renderWidth * (TextureFormat_getBits((enum TextureFormat) w->format) / 8);
 
 	*rtThread = (struct RaytracingThread) {
 
-		.imageBuf = Bit_subset(w->cpuVisibleBuffer, (usz)yOff * stride, (usz)ySiz * stride),
+		.imageBuf = Bit_subset(w->cpuVisibleBuffer, (U64)yOff * stride, (U64)ySiz * stride),
 
 		.cam = cam,
 		.spheres = sph,
@@ -257,41 +257,41 @@ struct Error RaytracingThread_start(
 #define SPHERE_COUNT 4
 #define MATERIAL_COUNT 2
 
-static const u16 renderWidth = 1920, renderHeight = 1080;
-static const f32 fovDeg = 45, far = .01f, near = 1000.f;
+static const U16 renderWidth = 1920, renderHeight = 1080;
+static const F32 fovDeg = 45, far = .01f, near = 1000.f;
 
 int Program_run() {
 
-	ns start = Timer_now();
+	Ns start = Timer_now();
 
 	//Init camera, output locations and size (for aspect) and scene
 
-	quat dir = Quat_fromEuler(f32x4_init3(0, -25, 0));
-	f32x4 origin = f32x4_zero();
+	Quat dir = Quat_fromEuler(F32x4_init3(0, -25, 0));
+	F32x4 origin = F32x4_zero();
 
-	f32x4 skyColor = f32x4_init4(0.25, 0.5, 1, 1);		//Sky blue
+	F32x4 skyColor = F32x4_init4(0.25, 0.5, 1, 1);		//Sky blue
 
 	struct Camera cam = Camera_create(dir, origin, fovDeg, far, near, renderWidth, renderHeight);
 
 	//Init spheres
 
 	Sphere sph[SPHERE_COUNT] = { 
-		Sphere_create(f32x4_init3(5, -2, 0), 1), 
-		Sphere_create(f32x4_init3(5, 0, -2), 1), 
-		Sphere_create(f32x4_init3(5, 0, 2),  1), 
-		Sphere_create(f32x4_init3(5, 2, 0),  1)
+		Sphere_create(F32x4_init3(5, -2, 0), 1), 
+		Sphere_create(F32x4_init3(5, 0, -2), 1), 
+		Sphere_create(F32x4_init3(5, 0, 2),  1), 
+		Sphere_create(F32x4_init3(5, 2, 0),  1)
 	};
 
 	struct Material material[MATERIAL_COUNT] = {
 
 		Material_createMetal(
-			f32x4_init3(1, 0, 0), 0,	//albedo, roughness
+			F32x4_init3(1, 0, 0), 0,	//albedo, roughness
 			0, 0,						//emissive, anisotropy
 			0, 0, 0						//clearcoat, clearcoatRoughness, transparency
 		),
 
 		Material_createDielectric(
-			f32x4_init3(0, 1, 0), 0.5,	//albedo, specular (*8%)
+			F32x4_init3(0, 1, 0), 0.5,	//albedo, specular (*8%)
 			0, 0,						//emissive, roughness
 			0, 0, 0, 0,					//clearcoat, clearcoatRoughness, sheen, sheenTint,
 			0, 0, 0, 0,					//subsurface, scatter distance, transparency, translucency, 
@@ -299,9 +299,9 @@ int Program_run() {
 		)
 	};
 
-	u64 materialIds[(SPHERE_COUNT + 2) / 3] = {
-		u64_pack21x3(0, 1, 0),
-		u64_pack21x3(0, 0, 0)
+	U64 materialIds[(SPHERE_COUNT + 2) / 3] = {
+		U64_pack21x3(0, 1, 0),
+		U64_pack21x3(0, 0, 0)
 	};
 
 	//Output image
@@ -316,13 +316,13 @@ int Program_run() {
 		//If there are no more windows or we're headless, we need to use RGBA too for now
 		//In the future we could support outputting this raw (after HDR file support)
 
-		bool useHdr = 
+		Bool useHdr = 
 			WindowManager_getEmptyPhysicalWindows(Platform_instance.windowManager) && 
 			WindowManager_supportsFormat(Platform_instance.windowManager, WindowFormat_hdr10a2);
 
 		err = WindowManager_create(
 			&Platform_instance.windowManager,
-			i32x2_zero(), i32x2_init2(renderWidth, renderHeight),
+			I32x2_zero(), I32x2_init2(renderWidth, renderHeight),
 			WindowHint_DisableResize | WindowHint_ProvideCPUBuffer,
 			String_createRefUnsafeConst("Test window"),
 			(struct WindowCallbacks) { 0 },
@@ -345,12 +345,12 @@ int Program_run() {
 
 	//Setup threads
 
-	u16 threadsToRun = (u16) u64_min(u16_MAX, Thread_getLogicalCores());
+	U16 threadsToRun = (U16) U64_min(U16_MAX, Thread_getLogicalCores());
 
-	usz threadsSize = sizeof(struct RaytracingThread) * threadsToRun;
+	U64 threadsSize = sizeof(struct RaytracingThread) * threadsToRun;
 
 	struct Buffer buf = (struct Buffer) { 0 };
-	err = Platform_instance.alloc.alloc(Platform_instance.alloc.alloc, threadsSize, &buf);
+	err = Platform_instance.alloc.alloc(Platform_instance.alloc.ptr, threadsSize, &buf);
 
 	if(err.genericError) {
 		printf("Couldn't allocate threads!\n");
@@ -363,7 +363,7 @@ int Program_run() {
 
 	struct Error err2 = (struct Error) { 0 };
 
-	for (u16 i = 0; i < threadsToRun; ++i) {
+	for (U16 i = 0; i < threadsToRun; ++i) {
 
 		err2 = RaytracingThread_start(
 
@@ -383,7 +383,7 @@ int Program_run() {
 
 	//Clean up threads
 
-	for (u16 i = 0; i < threadsToRun; ++i) {
+	for (U16 i = 0; i < threadsToRun; ++i) {
 
 		err2 = Thread_waitAndCleanup(&threads[i].thread, 0);
 
@@ -391,7 +391,7 @@ int Program_run() {
 			err = err2;
 	}
 
-	err2 = Platform_instance.alloc.free(Platform_instance.alloc.alloc, (struct Buffer) { (u8*) threads, threadsSize });
+	err2 = Platform_instance.alloc.free(Platform_instance.alloc.ptr, (struct Buffer) { (U8*) threads, threadsSize });
 
 	if (err2.genericError)
 		err = err2;
@@ -412,13 +412,13 @@ int Program_run() {
 
 	//Wait for all windows to close (can take forever if you don't close it yourself)
 
-	err = WindowManager_waitForExitAll(&Platform_instance.windowManager, u64_MAX);
+	err = WindowManager_waitForExitAll(&Platform_instance.windowManager, U64_MAX);
 
 	if (err.genericError) {
 		printf("Couldn't wait for all windows to exit\n");
 		return 5;
 	}
 
-	printf("Finished in %fms\n", (f32)Timer_elapsed(start) / ms);
+	printf("Finished in %fms\n", (F32)Timer_elapsed(start) / ms);
 	return 0;
 }

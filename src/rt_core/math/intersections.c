@@ -1,9 +1,9 @@
 #include "math/intersections.h"
 
-void Ray_create(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT) {
+void Ray_create(struct Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT) {
 
-	f32x4_setW(&pos, minT);
-	f32x4_setW(&dir, maxT);
+	F32x4_setW(&pos, minT);
+	F32x4_setW(&dir, maxT);
 
 	ray->originMinT = pos;
 	ray->dirMaxT = dir;
@@ -12,48 +12,48 @@ void Ray_create(struct Ray *ray, f32x4 pos, f32 minT, f32x4 dir, f32 maxT) {
 //Offset along a ray (solves self intersection), source:
 //http://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.7.pdf (chapter 6)
 
-const f32 origin = 1 / 32.0f;
-const f32 floatScale = 1 / 65536.0f;
-const f32 intScale = 256.0f;
+const F32 origin = 1 / 32.0f;
+const F32 floatScale = 1 / 65536.0f;
+const F32 intScale = 256.0f;
 
-f32x4 Ray_offsetEpsilon(f32x4 pos, f32x4 gN) {
+F32x4 Ray_offsetEpsilon(F32x4 pos, F32x4 gN) {
 
 	//TODO: int cast; not the same as floor with neg numbers
 	//		asfloat and asint as well as either Veci or manually writing ops
 
-	i32x4 offI = i32x4_fromF32x4(f32x4_mul(gN, f32x4_xxxx4(intScale)));
+	I32x4 offI = I32x4_fromF32x4(F32x4_mul(gN, F32x4_xxxx4(intScale)));
 
-	i32x4 delta = i32x4_mul(
-		i32x4_fromF32x4(f32x4_add(f32x4_mul(f32x4_lt(pos, f32x4_zero()), f32x4_negTwo()), f32x4_one())), 
+	I32x4 delta = I32x4_mul(
+		I32x4_fromF32x4(F32x4_add(F32x4_mul(F32x4_lt(pos, F32x4_zero()), F32x4_negTwo()), F32x4_one())), 
 		offI
 	);
 
-	f32x4 pI = f32x4_bitsI32x4(i32x4_add(i32x4_bitsF32x4(pos), delta));
+	F32x4 pI = F32x4_bitsI32x4(I32x4_add(I32x4_bitsF32x4(pos), delta));
 
-	f32x4 apos = f32x4_abs(pos);
+	F32x4 apos = F32x4_abs(pos);
 
-	if(f32x4_x(apos) < origin) f32x4_setX(&pI, f32x4_x(pos) + floatScale * f32x4_x(gN));
-	if(f32x4_y(apos) < origin) f32x4_setY(&pI, f32x4_y(pos) + floatScale * f32x4_y(gN));
-	if(f32x4_z(apos) < origin) f32x4_setZ(&pI, f32x4_z(pos) + floatScale * f32x4_z(gN));
+	if(F32x4_x(apos) < origin) F32x4_setX(&pI, F32x4_x(pos) + floatScale * F32x4_x(gN));
+	if(F32x4_y(apos) < origin) F32x4_setY(&pI, F32x4_y(pos) + floatScale * F32x4_y(gN));
+	if(F32x4_z(apos) < origin) F32x4_setZ(&pI, F32x4_z(pos) + floatScale * F32x4_z(gN));
 
 	return pI;
 }
 
 void Intersection_create(struct Intersection *i) {
 	i->hitT = -1;
-	i->object = u32_MAX;
+	i->object = U32_MAX;
 }
 
-Sphere Sphere_create(f32x4 pos, f32 rad) {
-	f32x4_setW(&pos, Math_pow2f(rad));
+Sphere Sphere_create(F32x4 pos, F32 rad) {
+	F32x4_setW(&pos, Math_pow2f(rad));
 	return pos;
 }
 
-bool Intersection_check(struct Intersection *i, struct Ray r, f32 t, u32 object) {
+Bool Intersection_check(struct Intersection *i, struct Ray r, F32 t, U32 object) {
 
-	bool beforeHit = i->hitT < 0 || t < i->hitT;
+	Bool beforeHit = i->hitT < 0 || t < i->hitT;
 
-	if (beforeHit && t < f32x4_w(r.dirMaxT) && t >= f32x4_w(r.originMinT)) {
+	if (beforeHit && t < F32x4_w(r.dirMaxT) && t >= F32x4_w(r.originMinT)) {
 		i->hitT = t;
 		i->object = object;
 		return true;
@@ -65,7 +65,7 @@ bool Intersection_check(struct Intersection *i, struct Ray r, f32 t, u32 object)
 //Intersect a sphere
 //https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.9.pdf Chapter 7
 
-bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, u32 objectId) {
+Bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, U32 objectId) {
 
 	//Sphere: (P - G) * (P - G) = r^2
 	//Ray: P = ro + rd * t
@@ -86,15 +86,15 @@ bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, u32 object
 
 	//Better one; 4 * d^2 * (r^2 - (f - (f.d)d)^2)
 
-	f32x4 f = f32x4_sub(r.originMinT, s);
-	f32 b = -f32x4_dot3(f, r.dirMaxT);
+	F32x4 f = F32x4_sub(r.originMinT, s);
+	F32 b = -F32x4_dot3(f, r.dirMaxT);
 
-	f32 r2 = f32x4_w(s);
+	F32 r2 = F32x4_w(s);
 
-	f32 D = r2 - f32x4_sqLen3(
-		f32x4_add(f, f32x4_mul(
+	F32 D = r2 - F32x4_sqLen3(
+		F32x4_add(f, F32x4_mul(
 			r.dirMaxT,
-			f32x4_xxxx4(b)
+			F32x4_xxxx4(b)
 		))
 	);
 
@@ -110,11 +110,11 @@ bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, u32 object
 
 	//Two intersections
 
-	f32 c = f32x4_sqLen3(f) - r2;
-	f32 q = b + Math_signInc(b) * Math_sqrtf(D);
+	F32 c = F32x4_sqLen3(f) - r2;
+	F32 q = b + Math_signInc(b) * Math_sqrtf(D);
 
-	f32 o0 = c / q;
-	f32 o1 = q;
+	F32 o0 = c / q;
+	F32 o1 = q;
 
 	//c < 0 means we start inside the sphere, so we only have to test o1
 

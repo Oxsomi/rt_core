@@ -2,21 +2,21 @@
 #include "math/math.h"
 #include "types/assert.h"
 
-struct Camera Camera_create(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u16 w, u16 h) {
+struct Camera Camera_create(Quat q, F32x4 pos, F32 fovDeg, F32 near, F32 far, U16 w, U16 h) {
 
-	f32 fovRad = fovDeg * Math_degToRad;
-	f32 aspect = (f32)w / h;
+	F32 fovRad = fovDeg * Math_degToRad;
+	F32 aspect = (F32)w / h;
 	
-	f32 nearPlaneLeft = Math_tan(fovRad * .5f);
+	F32 nearPlaneLeft = Math_tan(fovRad * .5f);
 
-	struct Transform tr = Transform_init(q, pos, f32x4_one());
+	struct Transform tr = Transform_init(q, pos, F32x4_one());
 
-	f32x4 p0 = Transform_apply(tr, f32x4_init3(-aspect, 1,  -nearPlaneLeft));
-	f32x4 p1 = Transform_apply(tr, f32x4_init3(aspect,  1,  -nearPlaneLeft));
-	f32x4 p2 = Transform_apply(tr, f32x4_init3(-aspect, -1, -nearPlaneLeft));
+	F32x4 p0 = Transform_apply(tr, F32x4_init3(-aspect, 1,  -nearPlaneLeft));
+	F32x4 p1 = Transform_apply(tr, F32x4_init3(aspect,  1,  -nearPlaneLeft));
+	F32x4 p2 = Transform_apply(tr, F32x4_init3(-aspect, -1, -nearPlaneLeft));
 
-	f32x4 right = f32x4_sub(p1, p0);
-	f32x4 up = f32x4_sub(p2, p0);
+	F32x4 right = F32x4_sub(p1, p0);
+	F32x4 up = F32x4_sub(p2, p0);
 
 	return (struct Camera) {
 		.transform = tr,
@@ -29,15 +29,15 @@ struct Camera Camera_create(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u1
 	};
 }
 
-void Camera_genRay(const struct Camera *c, struct Ray *ray, u16 x, u16 y, u16 w, u16 h, f32 jitterX, f32 jitterY) {
+void Camera_genRay(const struct Camera *c, struct Ray *ray, U16 x, U16 y, U16 w, U16 h, F32 jitterX, F32 jitterY) {
 
 	ocAssert("Out of bounds", x < w && y < h);
 
-	f32x4 right = f32x4_mul(c->right, f32x4_xxxx4((x + jitterX) / w));
-	f32x4 up = f32x4_mul(c->up, f32x4_xxxx4((y + jitterY) / h));
+	F32x4 right = F32x4_mul(c->right, F32x4_xxxx4((x + jitterX) / w));
+	F32x4 up = F32x4_mul(c->up, F32x4_xxxx4((y + jitterY) / h));
 
-	f32x4 pos = f32x4_add(f32x4_add(c->p0, right), up);
-	f32x4 dir = f32x4_normalize3(f32x4_sub(pos, c->transform.pos));
+	F32x4 pos = F32x4_add(F32x4_add(c->p0, right), up);
+	F32x4 dir = F32x4_normalize3(F32x4_sub(pos, c->transform.pos));
 
 	Ray_create(ray, c->transform.pos, c->near, dir, c->far);
 }

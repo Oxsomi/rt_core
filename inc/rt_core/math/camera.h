@@ -5,11 +5,11 @@ struct Camera {
 
 	struct Transform transform;
 
-	f32x4 p0, right, up;
+	F32x4 p0, right, up;
 
-	f32 near, far, fovRad;
+	F32 near, far, fovRad;
 };
 
-struct Camera Camera_create(quat q, f32x4 pos, f32 fovDeg, f32 near, f32 far, u16 w, u16 h);
+struct Camera Camera_create(Quat q, F32x4 pos, F32 fovDeg, F32 near, F32 far, U16 w, U16 h);
 
-void Camera_genRay(const struct Camera *cam, struct Ray *ray, u16 x, u16 y, u16 w, u16 h, f32 jitterX, f32 jitterY);
+void Camera_genRay(const struct Camera *cam, struct Ray *ray, U16 x, U16 y, U16 w, U16 h, F32 jitterX, F32 jitterY);
