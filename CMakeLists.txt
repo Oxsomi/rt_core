@@ -14,7 +14,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 if(MSVC)
-    add_compile_options(/W4 /WX /MD /MP /GR /arch:AVX2 /D_CRT_SECURE_NO_WARNINGS)
+    add_compile_options(/W4 /WX /MD /MP /GR /arch:AVX2 /D_CRT_SECURE_NO_WARNINGS /Gy)
 else()
     add_compile_options(-Wall -Wextra -Werror -mavx2)
 endif()
@@ -34,9 +34,8 @@ add_library(
 
 add_subdirectory(core3)
 
-target_include_directories(rt_core PRIVATE inc/rt_core)
-target_include_directories(rt_core PRIVATE core3/inc)
-target_link_libraries(rt_core PRIVATE core3_types core3_formats core3_platforms)
+target_include_directories(rt_core PUBLIC inc/rt_core)
+target_link_libraries(rt_core PUBLIC OxC3_platforms)
 
 file(GLOB_RECURSE tests "tst/*.c")
 
@@ -46,6 +45,4 @@ add_executable(
 	CMakeLists.txt
 )
 
-target_include_directories(rt_core_tests PRIVATE inc/rt_core)
-target_include_directories(rt_core_tests PRIVATE core3/inc)
-target_link_libraries(rt_core_tests PRIVATE rt_core)
+target_link_libraries(rt_core_tests PUBLIC rt_core)

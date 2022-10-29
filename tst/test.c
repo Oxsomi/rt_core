@@ -7,6 +7,7 @@
 #include "platforms/thread.h"
 #include "platforms/window.h"
 #include "platforms/log.h"
+#include "platforms/errorx.h"
 #include <stdio.h>
 
 //Handling multi threaded tracing
@@ -49,7 +50,11 @@ void trace(struct RaytracingThread *rtThread) {
 			for(U16 jj = 0; jj < SUPER_SAMPLING; ++jj)
 				for(U16 ii = 0; ii < SUPER_SAMPLING; ++ii) {
 
-					if(!Camera_genRay(c, &r, i, j, w, h, ii / (F32)SUPER_SAMPLING, jj / (F32)SUPER_SAMPLING))
+					if(!Camera_genRay(
+						c, &r, i, j, w, h, 
+						ii / (F32)SUPER_SAMPLING, 
+						jj / (F32)SUPER_SAMPLING
+					))
 						continue;
 
 					Intersection_create(&inter);
@@ -102,7 +107,7 @@ struct Error RaytracingThread_create(
 	if (threadOff == threadCount - 1)
 		ySiz += renderHeight % threadCount;
 
-	U64 stride = (U64)renderWidth * 4;
+	U64 stride = (U64)renderWidth * sizeof(U32);
 
 	*rtThread = (struct RaytracingThread) {
 		.cam = cam,
@@ -135,19 +140,33 @@ static enum TextureFormat format = TextureFormat_rgba8;
 
 void Program_exit() { }
 
-void draw(struct Window *w) {
+//Ensure we only draw after a frame has been generated
+
+struct Lock ourLock;
+
+void onDraw(struct Window *w) {
+
+	//Ensure we're ready for present, since we don't draw in this thread
+
+	if(!Lock_lock(&ourLock, U64_MAX))
+		goto terminate;
+
+	//Just copy it to the result, since we just need to present it
+	//We could render here if we want a dynamic scene
 
 	struct Error err;
 
 	if((err = Window_presentCPUBuffer(w, String_createRefUnsafeConst("output.bmp"))).genericError)
-		Log_error(String_createRefUnsafeConst("Couldn't present CPU buffer"), LogOptions_Default);
+		Error_printx(err, LogLevel_Error, LogOptions_Default);
 
-	//We completed our draw
-	//This is not done by default, because we might want to render multiple frames
+	//We need to signal that we're done if we're a virtual window
 
-	if(Window_isVirtual(w))
-		w->flags &= ~WindowFlags_IsActive;
+terminate:
+
+	Window_terminateVirtual(w);
 }
+
+//
 
 int Program_run() {
 
@@ -167,7 +186,7 @@ int Program_run() {
 		Sphere_create(F32x4_create3(5, 2, 0),  1)
 	};
 
-	U64 spheres = sizeof(sph) / sizeof(sph[0]);
+	U32 spheres = (U32)(sizeof(sph) / sizeof(sph[0]));
 
 	//Output image
 
@@ -186,28 +205,39 @@ int Program_run() {
 
 	struct RaytracingThread *threads = (struct RaytracingThread*) bufThreads.ptr;
 
+	//Setup lock
+
+	if ((err = Lock_create(&ourLock)).genericError || !Lock_lock(&ourLock, 5 * seconds)) {
+		Buffer_free(&bufThreads, Platform_instance.alloc);
+		return 7;
+	}
+
 	//Setup buffer
 
 	struct Window *wind = NULL;
 
 	if (!WindowManager_lock(&Platform_instance.windowManager, U64_MAX)) {
+		Lock_unlock(&ourLock);
+		Lock_free(&ourLock);
 		Buffer_free(&bufThreads, Platform_instance.alloc);
 		return 6;
 	}
 
 	struct WindowCallbacks callbacks = (struct WindowCallbacks) { 0 };
-	callbacks.draw = draw;
+	callbacks.onDraw = onDraw;
 
-	if((err = WindowManager_create(
+	if((err = WindowManager_createVirtual(
 		&Platform_instance.windowManager,
-		I32x2_zero(), I32x2_create2(renderWidth, renderHeight), 
-		WindowHint_DisableResize | WindowHint_ProvideCPUBuffer, 
-		String_createRefUnsafeConst("Rt core test"),
+		/* I32x2_zero(), */ I32x2_create2(renderWidth, renderHeight),
+		//WindowHint_DisableResize | WindowHint_ProvideCPUBuffer, 
+		//String_createRefUnsafeConst("Rt core test"),
 		callbacks,
 		(enum WindowFormat) format,
 		&wind
 	)).genericError) {
 		WindowManager_unlock(&Platform_instance.windowManager);
+		Lock_unlock(&ourLock);
+		Lock_free(&ourLock);
 		Buffer_free(&bufThreads, Platform_instance.alloc);
 		return 4;
 	}
@@ -224,29 +254,60 @@ int Program_run() {
 		)).genericError) { 
 
 			for(U16 j = 0; j < i; ++j)
-				Thread_waitAndCleanup(&threads[j].thread, 0);
+				Thread_waitAndCleanup(&threads[j].thread, U32_MAX);
+
+			Lock_unlock(&ourLock);
+			Lock_free(&ourLock);
+			Buffer_free(&bufThreads, Platform_instance.alloc);
+
+			if(Lock_lock(&wind->lock, 5 * seconds))
+				WindowManager_freeWindow(&Platform_instance.windowManager, &wind);
 
 			WindowManager_unlock(&Platform_instance.windowManager);
-			Buffer_free(&bufThreads, Platform_instance.alloc);
-			WindowManager_free(&Platform_instance.windowManager, &wind);
 			return 3;
 		}
 
 	//Clean up threads
 
 	for (U64 i = 0; i < threadsToRun; ++i)
-		Thread_waitAndCleanup(&threads[i].thread, 0);
+		Thread_waitAndCleanup(&threads[i].thread, U32_MAX);
 
 	Buffer_free(&bufThreads, Platform_instance.alloc);
+	
+	//Signal our lock as ready for present
+
+	Lock_unlock(&ourLock);
 
 	//Finished render
 
-	printf("Finished in %fms\n", (F32)Timer_elapsed(start) / ms);
+	struct String prefix = String_createRefUnsafeConst("Finished in ");
+	struct String suffix = String_createRefUnsafeConst(" ms");
+	struct String temp = String_createEmpty(), temp0 = String_createEmpty();
+
+	if(!String_createCopy(prefix, Platform_instance.alloc, &temp).genericError) {
+
+		if(!String_createDec(
+			Timer_elapsed(start) / ms, false, Platform_instance.alloc, &temp0
+		).genericError) {
+		
+			if(
+				!String_appendString(&temp, temp0, Platform_instance.alloc).genericError && 
+				!String_appendString(&temp, suffix, Platform_instance.alloc).genericError
+			)
+				Log_debug(temp, LogOptions_Default);
+
+			String_free(&temp0, Platform_instance.alloc);
+		}
+
+		String_free(&temp, Platform_instance.alloc);
+	}
 
 	//Wait for user to close the window
 
 	WindowManager_unlock(&Platform_instance.windowManager);			//We don't need to do anything now
-	WindowManager_waitForExitAll(wind, U64_MAX);
+	WindowManager_waitForExitAll(&Platform_instance.windowManager, U64_MAX);
+
+	Lock_free(&ourLock);
 
 	return 0;
 }
