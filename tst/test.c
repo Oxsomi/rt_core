@@ -136,7 +136,7 @@ struct Error RaytracingThread_create(
 static const U16 renderWidth = 1920, renderHeight = 1080;
 static const U32 skyColor = 0xFF0080FF;
 
-static enum TextureFormat format = TextureFormat_rgba8;
+static ETextureFormat format = ETextureFormat_rgba8;
 
 void Program_exit() { }
 
@@ -157,7 +157,7 @@ void onDraw(struct Window *w) {
 	struct Error err;
 
 	if((err = Window_presentCPUBuffer(w, String_createRefUnsafeConst("output.bmp"))).genericError)
-		Error_printx(err, LogLevel_Error, LogOptions_Default);
+		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 
 	//We need to signal that we're done if we're a virtual window
 
@@ -229,10 +229,10 @@ int Program_run() {
 	if((err = WindowManager_createVirtual(
 		&Platform_instance.windowManager,
 		/* I32x2_zero(), */ I32x2_create2(renderWidth, renderHeight),
-		//WindowHint_DisableResize | WindowHint_ProvideCPUBuffer, 
+		//EWindowHint_DisableResize | EWindowHint_ProvideCPUBuffer, 
 		//String_createRefUnsafeConst("Rt core test"),
 		callbacks,
-		(enum WindowFormat) format,
+		(EWindowFormat) format,
 		&wind
 	)).genericError) {
 		WindowManager_unlock(&Platform_instance.windowManager);
@@ -294,7 +294,7 @@ int Program_run() {
 				!String_appendString(&temp, temp0, Platform_instance.alloc).genericError && 
 				!String_appendString(&temp, suffix, Platform_instance.alloc).genericError
 			)
-				Log_debug(temp, LogOptions_Default);
+				Log_debug(temp, ELogOptions_Default);
 
 			String_free(&temp0, Platform_instance.alloc);
 		}
