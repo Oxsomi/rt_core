@@ -1,25 +1,25 @@
 #pragma once
 #include "math/transform.h"
 
-struct Ray {
+typedef struct Ray {
 	F32x4 originMinT;
 	F32x4 dirMaxT;
-};
+} Ray;
 
 typedef F32x4 Sphere;		//originRadius2
 
-struct AABB {
+typedef struct AABB {
 	F32x4 mi, ma;
-};
+} AABB;
 
-struct Intersection {
+typedef struct Intersection {
 	F32 hitT;
 	U32 object;
-};
+} Intersection;
 
-void Ray_create(struct Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT);
-void Intersection_create(struct Intersection *i);
+void Ray_create(Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT);
+void Intersection_create(Intersection *i);
 Sphere Sphere_create(F32x4 pos, F32 rad);
 
-Bool Intersection_check(struct Intersection *i, struct Ray r, F32 t, U32 objectId);
-Bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, U32 objectId);
+Bool Intersection_check(Intersection *i, Ray r, F32 t, U32 objectId);
+Bool Sphere_intersect(Sphere s, Ray r, Intersection *i, U32 objectId);

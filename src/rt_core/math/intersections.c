@@ -1,6 +1,6 @@
 #include "math/intersections.h"
 
-void Ray_create(struct Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT) {
+void Ray_create(Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT) {
 
 	if(!ray)
 		return;
@@ -12,7 +12,7 @@ void Ray_create(struct Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT) {
 	ray->dirMaxT = dir;
 }
 
-void Intersection_create(struct Intersection *i) {
+void Intersection_create(Intersection *i) {
 
 	if(!i)
 		return;
@@ -24,7 +24,7 @@ void Intersection_create(struct Intersection *i) {
 Sphere Sphere_create(F32x4 pos, F32 rad) {
 
 	F32 rad2 = 0;
-	struct Error err = F32_pow2(rad, &rad2);
+	Error err = F32_pow2(rad, &rad2);
 
 	if(err.genericError)
 		return F32x4_zero();
@@ -33,7 +33,7 @@ Sphere Sphere_create(F32x4 pos, F32 rad) {
 	return pos;
 }
 
-Bool Intersection_check(struct Intersection *i, struct Ray r, F32 t, U32 object) {
+Bool Intersection_check(Intersection *i, Ray r, F32 t, U32 object) {
 
 	if(!i)
 		return false;
@@ -52,7 +52,7 @@ Bool Intersection_check(struct Intersection *i, struct Ray r, F32 t, U32 object)
 //Intersect a sphere
 //https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.9.pdf Chapter 7
 
-Bool Sphere_intersect(Sphere s, struct Ray r, struct Intersection *i, U32 objectId) {
+Bool Sphere_intersect(Sphere s, Ray r, Intersection *i, U32 objectId) {
 
 	if(!i)
 		return false;
