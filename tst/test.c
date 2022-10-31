@@ -7,7 +7,9 @@
 #include "platforms/thread.h"
 #include "platforms/window.h"
 #include "platforms/log.h"
-#include "platforms/errorx.h"
+#include "platforms/ext/errorx.h"
+#include "platforms/ext/bufferx.h"
+#include "platforms/ext/stringx.h"
 #include <stdio.h>
 
 //Handling multi threaded tracing
@@ -200,7 +202,7 @@ int Program_run() {
 
 	struct Buffer bufThreads = Buffer_createNull();
 
-	if((err = Buffer_createUninitializedBytes(threadsSize, Platform_instance.alloc, &bufThreads)).genericError)
+	if((err = Buffer_createUninitializedBytesx(threadsSize, &bufThreads)).genericError)
 		return 2;
 
 	struct RaytracingThread *threads = (struct RaytracingThread*) bufThreads.ptr;
@@ -208,7 +210,7 @@ int Program_run() {
 	//Setup lock
 
 	if ((err = Lock_create(&ourLock)).genericError || !Lock_lock(&ourLock, 5 * seconds)) {
-		Buffer_free(&bufThreads, Platform_instance.alloc);
+		Buffer_freex(&bufThreads);
 		return 7;
 	}
 
@@ -219,7 +221,7 @@ int Program_run() {
 	if (!WindowManager_lock(&Platform_instance.windowManager, U64_MAX)) {
 		Lock_unlock(&ourLock);
 		Lock_free(&ourLock);
-		Buffer_free(&bufThreads, Platform_instance.alloc);
+		Buffer_freex(&bufThreads);
 		return 6;
 	}
 
@@ -238,7 +240,7 @@ int Program_run() {
 		WindowManager_unlock(&Platform_instance.windowManager);
 		Lock_unlock(&ourLock);
 		Lock_free(&ourLock);
-		Buffer_free(&bufThreads, Platform_instance.alloc);
+		Buffer_freex(&bufThreads);
 		return 4;
 	}
 
@@ -258,7 +260,7 @@ int Program_run() {
 
 			Lock_unlock(&ourLock);
 			Lock_free(&ourLock);
-			Buffer_free(&bufThreads, Platform_instance.alloc);
+			Buffer_freex(&bufThreads);
 
 			if(Lock_lock(&wind->lock, 5 * seconds))
 				WindowManager_freeWindow(&Platform_instance.windowManager, &wind);
@@ -272,7 +274,7 @@ int Program_run() {
 	for (U64 i = 0; i < threadsToRun; ++i)
 		Thread_waitAndCleanup(&threads[i].thread, U32_MAX);
 
-	Buffer_free(&bufThreads, Platform_instance.alloc);
+	Buffer_freex(&bufThreads);
 	
 	//Signal our lock as ready for present
 
@@ -284,22 +286,20 @@ int Program_run() {
 	struct String suffix = String_createRefUnsafeConst(" ms");
 	struct String temp = String_createEmpty(), temp0 = String_createEmpty();
 
-	if(!String_createCopy(prefix, Platform_instance.alloc, &temp).genericError) {
+	if(!String_createCopyx(prefix, &temp).genericError) {
 
-		if(!String_createDec(
-			Timer_elapsed(start) / ms, false, Platform_instance.alloc, &temp0
-		).genericError) {
+		if(!String_createDecx(Timer_elapsed(start) / ms, false, &temp0).genericError) {
 		
 			if(
-				!String_appendString(&temp, temp0, Platform_instance.alloc).genericError && 
-				!String_appendString(&temp, suffix, Platform_instance.alloc).genericError
+				!String_appendStringx(&temp, temp0).genericError && 
+				!String_appendStringx(&temp, suffix).genericError
 			)
 				Log_debug(temp, ELogOptions_Default);
 
-			String_free(&temp0, Platform_instance.alloc);
+			String_freex(&temp0);
 		}
 
-		String_free(&temp, Platform_instance.alloc);
+		String_freex(&temp);
 	}
 
 	//Wait for user to close the window
