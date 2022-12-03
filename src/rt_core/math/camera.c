@@ -1,9 +1,17 @@
 #include "math/camera.h"
 #include "math/math.h"
 
-Camera Camera_create(Quat q, F32x4 pos, F32 fovDeg, F32 near, F32 far, U16 w, U16 h) {
+Camera Camera_create(
+	Quat q, 
+	F32x4 pos, 
+	F32 fovDeg, 
+	F32 near, 
+	F32 far, 
+	U16 w, 
+	U16 h
+) {
 
-	F32 fovRad = fovDeg * F32_degToRad;
+	F32 fovRad = fovDeg * F32_DEG_TO_RAD;
 	F32 aspect = (F32)w / h;
 	
 	F32 nearPlaneLeft = F32_tan(fovRad * .5f);
@@ -28,9 +36,18 @@ Camera Camera_create(Quat q, F32x4 pos, F32 fovDeg, F32 near, F32 far, U16 w, U1
 	};
 }
 
-Bool Camera_genRay(const Camera *c, Ray *ray, U16 x, U16 y, U16 w, U16 h, F32 jitterX, F32 jitterY) {
+Bool Camera_genRay(
+	const Camera *c, 
+	Ray *ray, 
+	U16 x, 
+	U16 y, 
+	U16 w, 
+	U16 h, 
+	F32 jitterX, 
+	F32 jitterY
+) {
 
-	if(x >= w || y >= h)
+	if(x >= w || y >= h || !c || !ray)
 		return false;
 
 	F32x4 right = F32x4_mul(c->right, F32x4_xxxx4((x + jitterX) / w));

@@ -17,7 +17,14 @@ typedef struct Intersection {
 	U32 object;
 } Intersection;
 
-void Ray_create(Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT);
+void Ray_create(
+	Ray *ray, 
+	F32x4 pos, 
+	F32 minT, 
+	F32x4 dir, 
+	F32 maxT
+);
+
 void Intersection_create(Intersection *i);
 Sphere Sphere_create(F32x4 pos, F32 rad);
 

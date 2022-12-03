@@ -1,4 +1,5 @@
 #include "math/intersections.h"
+#include "types/error.h"
 
 void Ray_create(Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT) {
 
