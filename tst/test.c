@@ -128,7 +128,7 @@ Error RaytracingThread_create(
 		.skyColor = skyColor
 	};
 
-	Error err = Buffer_createSubset(buf, (U64)yOff * stride, (U64)ySiz * stride, &rtThread->imageBuf);
+	Error err = Buffer_createSubset(buf, (U64)yOff * stride, (U64)ySiz * stride, false, &rtThread->imageBuf);
 
 	if(err.genericError)
 		return err;
