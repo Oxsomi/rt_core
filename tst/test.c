@@ -287,15 +287,7 @@ int Program_run() {
 
 	//Finished render
 
-	Log_debug(String_createConstRefUnsafe("Finished in "), ELogOptions_Timestamp | ELogOptions_Thread);
-
-	String temp = String_createNull();
-	if(!String_createDecx(Time_elapsed(start) / MS, false, &temp).genericError) {
-		Log_debug(temp, ELogOptions_None);
-		String_freex(&temp);
-	}
-
-	Log_debug(String_createConstRefUnsafe("ms"), ELogOptions_NewLine);
+	Log_debug(ELogOptions_Default, "Finished in %ums", (Time_elapsed(start) + MS - 1) / MS);
 
 	//Wait for user to close the window
 
