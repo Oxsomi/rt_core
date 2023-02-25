@@ -35,6 +35,8 @@
 #include "platforms/ext/stringx.h"
 #include <stdio.h>
 
+const Bool Platform_useWorkingDirectory = false;
+
 //Handling multi threaded tracing
 
 typedef struct RaytracingThread {
