@@ -186,13 +186,13 @@ void onDraw(Window *w) {
 	//We could render here if we want a dynamic scene
 
 	Error err = Error_none();
-	_gotoIfError(err, Window_presentCPUBuffer(w, String_createConstRefUnsafe("output.bmp"), 1 * SECOND));
+	_gotoIfError(clean, Window_presentCPUBuffer(w, String_createConstRefUnsafe("output.bmp"), 1 * SECOND));
 
 	//We need to signal that we're done if we're a virtual window
 
 	goto terminate;
 
-err:
+clean:
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 terminate:
 	Window_terminateVirtual(w);
