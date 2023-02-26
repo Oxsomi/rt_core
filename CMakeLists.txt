@@ -61,7 +61,7 @@ add_subdirectory(core3)
 target_include_directories(rt_core PUBLIC inc/rt_core)
 target_link_libraries(rt_core PUBLIC OxC3_platforms)
 
-add_virtual_files(TARGET rt_core NAME shaders ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders)
+# add_virtual_files(TARGET rt_core NAME shaders ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders)
 
 file(GLOB_RECURSE tests "tst/*.c")
 
@@ -75,6 +75,6 @@ set_target_properties(rt_core_tests PROPERTIES FOLDER Oxsomi/raytracing/test)
 
 target_link_libraries(rt_core_tests PUBLIC rt_core)
 
-add_virtual_dependencies(TARGET rt_core_tests DEPENDENCIES rt_core)
+# add_virtual_dependencies(TARGET rt_core_tests DEPENDENCIES rt_core)
 configure_icon(rt_core_tests "${CMAKE_CURRENT_SOURCE_DIR}/res/logo.ico")
 configure_virtual_files(rt_core_tests)

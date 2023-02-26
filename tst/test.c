@@ -200,8 +200,6 @@ terminate:
 	Window_terminateVirtual(w);
 }
 
-//
-
 int Program_run() {
 
 	Ns start = Time_now();
