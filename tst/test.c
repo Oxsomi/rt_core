@@ -54,7 +54,7 @@ typedef struct RaytracingThread {
 
 } RaytracingThread;
 
-#define _SUPER_SAMPLING 4
+#define _SUPER_SAMPLING 1
 #define _SUPER_SAMPLING2 (_SUPER_SAMPLING * _SUPER_SAMPLING)
 
 void trace(RaytracingThread *rtThread) {
@@ -176,10 +176,12 @@ Lock ourLock;
 
 void onDraw(Window *w) {
 
-	//Ensure we're ready for present, since we don't draw in this thread
+	//Ensure we're ready for present, since we don't draw in this thread.
+	//It's possible that we're called before we're ready, 
+	//in this case we'll do nothing, until we're ready.
 
 	if(!Lock_lock(&ourLock, U64_MAX))
-		goto terminate;
+		return;
 
 	//Just copy it to the result, since we just need to present it
 	//We could render here if we want a dynamic scene
@@ -193,8 +195,11 @@ void onDraw(Window *w) {
 
 clean:
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+
 terminate:
-	Window_terminateVirtual(w);
+
+	if(Window_isVirtual(w))
+		Window_terminate(w);
 }
 
 int Program_run() {
@@ -204,7 +209,6 @@ int Program_run() {
 	//Init camera, output locations and size and scene
 
 	Quat dir = Quat_fromEuler(F32x4_create3(0, -25, 0));
-	Camera cam = Camera_create(dir, F32x4_zero(), 45, .01f, 1000.f, RENDER_WIDTH, RENDER_HEIGHT);
 
 	//Init spheres
 
@@ -251,11 +255,11 @@ int Program_run() {
 	WindowCallbacks callbacks = (WindowCallbacks) { 0 };
 	callbacks.onDraw = onDraw;
 
-	_gotoIfError(clean, WindowManager_createVirtual(
+	_gotoIfError(clean, WindowManager_createWindow(
 		&Platform_instance.windowManager,
-		/* I32x2_zero(), */ I32x2_create2(RENDER_WIDTH, RENDER_HEIGHT),
-		//EWindowHint_DisableResize | EWindowHint_ProvideCPUBuffer, 
-		//String_createConstRefUnsafe("Rt core test"),
+		I32x2_zero(), I32x2_create2(RENDER_WIDTH, RENDER_HEIGHT),
+		EWindowHint_DisableResize | EWindowHint_ProvideCPUBuffer, 
+		String_createConstRefUnsafe("Rt core test"),
 		callbacks,
 		(EWindowFormat) FORMAT,
 		&wind
@@ -263,12 +267,15 @@ int Program_run() {
 
 	//Start threads
 
+	Camera cam = Camera_create(dir, F32x4_zero(), 45, .01f, 1000.f, (U16)I32x2_x(wind->size), (U16)I32x2_y(wind->size));
+
 	for (; threadId < threadsToRun; ++threadId) 
 		_gotoIfError(clean, RaytracingThread_create(
 			threads + threadId, threadId, threadsToRun,
 			sph, spheres,
 			&cam, SKY_COLOR,
-			RENDER_WIDTH, RENDER_HEIGHT, wind->cpuVisibleBuffer
+			(U16)I32x2_x(wind->size), (U16)I32x2_y(wind->size), 
+			wind->cpuVisibleBuffer
 		));
 
 	//Clean up threads
@@ -303,8 +310,10 @@ clean:
 		for(U16 j = 0; j < threadId; ++j)
 			Thread_waitAndCleanup(&threads[j].thread, U32_MAX);
 
-	if(wind && Lock_lock(&wind->lock, 5 * SECOND))
-		WindowManager_freeWindow(&Platform_instance.windowManager, &wind);
+	if(wind && Lock_lock(&wind->lock, 5 * SECOND)) {
+		Window_terminate(wind);
+		Lock_unlock(&wind->lock);
+	}
 
 	WindowManager_unlock(&Platform_instance.windowManager);
 
