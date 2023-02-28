@@ -26,11 +26,10 @@ void Ray_create(Ray *ray, F32x4 pos, F32 minT, F32x4 dir, F32 maxT) {
 	if(!ray)
 		return;
 
-	F32x4_setW(&pos, minT);
-	F32x4_setW(&dir, maxT);
-
-	ray->originMinT = pos;
-	ray->dirMaxT = dir;
+	ray->origin = pos;
+	ray->dir = dir;
+	ray->minT = minT;
+	ray->maxT = maxT;
 }
 
 void Intersection_create(Intersection *i) {
@@ -48,10 +47,9 @@ Sphere Sphere_create(F32x4 pos, F32 rad) {
 	Error err = F32_pow2(rad, &rad2);
 
 	if(err.genericError)
-		return F32x4_zero();
+		return (Sphere) { 0 };
 
-	F32x4_setW(&pos, rad2);
-	return pos;
+	return (Sphere) { pos, rad2 };
 }
 
 Bool Intersection_check(Intersection *i, Ray r, F32 t, U32 object) {
@@ -61,7 +59,7 @@ Bool Intersection_check(Intersection *i, Ray r, F32 t, U32 object) {
 
 	Bool beforeHit = i->hitT < 0 || t < i->hitT;
 
-	if (beforeHit && t < F32x4_w(r.dirMaxT) && t >= F32x4_w(r.originMinT)) {
+	if (beforeHit && t < r.maxT && t >= r.minT) {
 		i->hitT = t;
 		i->object = object;
 		return true;
@@ -97,14 +95,14 @@ Bool Sphere_intersect(Sphere s, Ray r, Intersection *i, U32 objectId) {
 
 	//Better one; 4 * d^2 * (r^2 - (f - (f.d)d)^2)
 
-	F32x4 f = F32x4_sub(r.originMinT, s);
-	F32 b = -F32x4_dot3(f, r.dirMaxT);
+	F32x4 f = F32x4_sub(r.origin, s.origin);
+	F32 b = -F32x4_dot4(f, r.dir);
 
-	F32 r2 = F32x4_w(s);
+	F32 r2 = s.r2;
 
-	F32 D = r2 - F32x4_sqLen3(
+	F32 D = r2 - F32x4_sqLen4(
 		F32x4_add(f, F32x4_mul(
-			r.dirMaxT,
+			r.dir,
 			F32x4_xxxx4(b)
 		))
 	);

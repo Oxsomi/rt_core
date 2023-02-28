@@ -113,8 +113,8 @@ void RaytracingThread_trace(RaytracingThread *rtThread) {
 
 						//Process intersection
 
-						F32x4 pos = F32x4_add(r.originMinT, F32x4_mul(r.dirMaxT, F32x4_xxxx4(inter.hitT)));
-						F32x4 nrm = F32x4_normalize3(F32x4_sub(pos, scene->spheres[inter.object]));
+						F32x4 pos = F32x4_add(r.origin, F32x4_mul(r.dir, F32x4_xxxx4(inter.hitT)));
+						F32x4 nrm = F32x4_normalize4(F32x4_sub(pos, scene->spheres[inter.object].origin));
 
 						F32x4 nrmCol = F32x4_add(F32x4_mul(nrm, F32x4_xxxx4(.5f)), F32x4_xxxx4(.5f));
 

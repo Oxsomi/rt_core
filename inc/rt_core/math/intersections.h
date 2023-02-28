@@ -22,11 +22,16 @@
 #include "math/transform.h"
 
 typedef struct Ray {
-	F32x4 originMinT;
-	F32x4 dirMaxT;
+	F32x4 origin;
+	F32x4 dir;
+	F32 maxT, minT;
 } Ray;
 
-typedef F32x4 Sphere;		//originRadius2
+typedef struct Sphere {
+	F32x4 origin;
+	F32 r2;
+	U32 pad[3];
+} Sphere;
 
 typedef struct AABB {
 	F32x4 mi, ma;

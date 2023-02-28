@@ -74,7 +74,7 @@ Bool Camera_genRay(
 	F32x4 up = F32x4_mul(c->up, F32x4_xxxx4((y + jitterY) / h));
 
 	F32x4 pos = F32x4_add(F32x4_add(c->p0, right), up);
-	F32x4 dir = F32x4_normalize3(F32x4_sub(pos, c->transform.pos));
+	F32x4 dir = F32x4_normalize4(F32x4_sub(pos, c->transform.pos));
 
 	Ray_create(ray, c->transform.pos, c->near, dir, c->far);
 	return true;
