@@ -34,38 +34,54 @@
 
 const Bool Platform_useWorkingDirectory = false;
 
+#define _SUPER_SAMPLING 1
+#define _SUPER_SAMPLING2 (_SUPER_SAMPLING * _SUPER_SAMPLING)
+
 //Handling multi threaded tracing
 
-typedef struct RaytracingThread {
+typedef struct Scene {
 
-	Thread *thread;
-
-	Buffer imageBuf;
-	const Camera *cam;
+	F32x4 skyColor;
 
 	const Sphere *spheres;
 
 	U32 sphereCount;
 
-	U16 yOffset, ySize;
-	U16 w, h;
+} Scene;
 
-	U32 skyColor;
+typedef struct RaytracingThread {
+
+	Thread *thread;
+
+	const Scene *scene;
+	const Camera *camera;
+	const I32x2 *viewport;
+
+	U32 *imageBuf;
+
+	U16 yOffset, ySize;
+
+	U32 threadOff;
+
+	Lock lock;
+
+	Bool shouldTerminate;
+	Bool hasWork;
 
 } RaytracingThread;
 
-#define _SUPER_SAMPLING 1
-#define _SUPER_SAMPLING2 (_SUPER_SAMPLING * _SUPER_SAMPLING)
-
-void trace(RaytracingThread *rtThread) {
+void RaytracingThread_trace(RaytracingThread *rtThread) {
 
 	Ray r;
 	Intersection inter;
 
-	const Camera *c = rtThread->cam;
-	Buffer *buf = &rtThread->imageBuf;
+	const Scene *scene = rtThread->scene;
+	const Camera *c = rtThread->camera;
 
-	U16 w = rtThread->w, h = rtThread->h;
+	U16 w = (U16) I32x2_x(*rtThread->viewport);
+	U16 h = (U16) I32x2_y(*rtThread->viewport);
+
+	U32 *ptr = rtThread->imageBuf;
 
 	for (U16 j = rtThread->yOffset, jMax = j + rtThread->ySize; j < jMax; ++j)
 		for (U16 i = 0; i < w; ++i) {
@@ -86,8 +102,8 @@ void trace(RaytracingThread *rtThread) {
 
 					//Get intersection
 
-					for (U32 k = 0; k < rtThread->sphereCount; ++k)
-						Sphere_intersect(rtThread->spheres[k], r, &inter, k);
+					for (U32 k = 0; k < scene->sphereCount; ++k)
+						Sphere_intersect(scene->spheres[k], r, &inter, k);
 
 					//
 
@@ -98,90 +114,228 @@ void trace(RaytracingThread *rtThread) {
 						//Process intersection
 
 						F32x4 pos = F32x4_add(r.originMinT, F32x4_mul(r.dirMaxT, F32x4_xxxx4(inter.hitT)));
-						F32x4 nrm = F32x4_normalize3(F32x4_sub(pos, rtThread->spheres[inter.object]));
+						F32x4 nrm = F32x4_normalize3(F32x4_sub(pos, scene->spheres[inter.object]));
 
 						F32x4 nrmCol = F32x4_add(F32x4_mul(nrm, F32x4_xxxx4(.5f)), F32x4_xxxx4(.5f));
 
 						col = nrmCol;
 					}
 
-					else col = F32x4_srgba8Unpack(rtThread->skyColor);
+					else col = scene->skyColor;
 
 					accum = F32x4_add(accum, col);
 				}
 
 			accum = F32x4_div(accum, F32x4_xxxx4(_SUPER_SAMPLING2));
 
-			U32 packed = F32x4_srgba8Pack(accum);
-
-			if(Buffer_appendU32(buf, packed).genericError)
-				return;
+			*ptr = F32x4_srgba8Pack(accum);
+			++ptr;
 		}
 }
 
-Error RaytracingThread_create(
-	RaytracingThread *rtThread,
-	U16 threadOff,
-	U16 threadCount,
-	const Sphere *sph,
-	U32 sphereCount,
-	const Camera *cam,
-	U32 skyColor,
-	U16 renderWidth,
-	U16 renderHeight,
-	Buffer buf
-) {
-	U16 ySiz = renderHeight / threadCount;
-	U16 yOff = ySiz * threadOff;
+//A raytracing job is just waiting to do something,
+//until the next frame is requested.
+//This is because launching a thread is expensive.
 
-	if (threadOff == threadCount - 1)
-		ySiz += renderHeight % threadCount;
+void RaytracingThread_job(RaytracingThread *rtThread) {
 
-	U64 stride = (U64)renderWidth * sizeof(U32);
+	Bool terminate = !rtThread || rtThread->shouldTerminate;
 
-	*rtThread = (RaytracingThread) {
-		.cam = cam,
-		.spheres = sph,
-		.sphereCount = sphereCount,
-		.yOffset = yOff,
-		.ySize = ySiz,
-		.w = renderWidth,
-		.h = renderHeight,
-		.skyColor = skyColor
-	};
+	while (!terminate) {
 
-	Error err = Buffer_createSubset(buf, (U64)yOff * stride, (U64)ySiz * stride, false, &rtThread->imageBuf);
+		//Ensure nothing is working on our thread at the moment.
+		//This is possible because on a resize we do get new data.
 
-	if(err.genericError)
-		return err;
+		while(!Lock_lock(&rtThread->lock, 1 * MU))
+			Thread_sleep(1 * MU);
 
-	if((err = Thread_create(trace, rtThread, &rtThread->thread)).genericError)
-		return err;
+		//Only trace if we've gotten a signal that data is ready
 
-	return Error_none();
+		if(rtThread->hasWork) {
+			RaytracingThread_trace(rtThread);
+			rtThread->hasWork = false;
+		}
+
+		terminate = rtThread->shouldTerminate;
+
+		Lock_unlock(&rtThread->lock);
+
+		//Ensure we don't waste too many resources waiting for a next job.
+
+		if(!terminate)
+			Thread_sleep(1 * MU);
+	}
+
+	Lock_free(&rtThread->lock);
 }
+
+//Globals
+
+Scene scene;
+
+Camera camera;
+Quat camDir;
+
+I32x2 viewport;
+
+F32x4 camOrigin;
+
+U16 threadCount;
+RaytracingThread *threads;
+
+U64 frameId = 0;
+U64 lastErrorFrame = (U64) -1;
+
+F32 time = 0;
 
 //
 
-static const U16 RENDER_WIDTH = 1920, RENDER_HEIGHT = 1080;
-static const U32 SKY_COLOR = 0xFF0080FF;
+Error RaytracingThread_create(
+	RaytracingThread *rtThread,
+	U16 threadOff
+) {
+	
+	*rtThread = (RaytracingThread) {
+		.threadOff = threadOff,
+		.scene = &scene,
+		.camera = &camera,
+		.viewport = &viewport
+	};
 
-static ETextureFormat FORMAT = ETextureFormat_rgba8;
+	Error err = Error_none();
+	_gotoIfError(clean, Lock_create(&rtThread->lock));
+
+	_gotoIfError(clean, Thread_create(RaytracingThread_job, rtThread, &rtThread->thread));
+
+clean:
+
+	if (err.genericError) {
+		Lock_free(&rtThread->lock);
+		*rtThread = (RaytracingThread) { 0 };
+	}
+
+	return err;
+}
 
 void Program_exit() { }
 
-//Ensure we only draw after a frame has been generated
+void onUpdate(Window *w, F32 dt) {
 
-Lock ourLock;
+	F32 prevTime = time;
+
+	time += dt;
+
+	if(F32_floor(prevTime) != F32_floor(time))
+		Log_debugLn("%ufps", (U32)F32_round(1 / dt));
+
+	//Setup camera
+
+	viewport = w->size;
+
+	U16 renderWidth = (U16) I32x2_x(w->size);
+	U16 renderHeight = (U16) I32x2_y(w->size);
+
+	camera = Camera_create(
+		camDir,
+		camOrigin,
+		45, 
+		.01f, 
+		1000.f, 
+		renderWidth, 
+		renderHeight
+	);
+
+	//Animate sky color
+
+	F32 perc = F32_cos(time) * 0.5f + 0.5f;
+	scene.skyColor = F32x4_mul(F32x4_create4(0.25f, 0.5f, 1, 1), F32x4_xxxx4(perc));
+}
 
 void onDraw(Window *w) {
 
-	//Ensure we're ready for present, since we don't draw in this thread.
-	//It's possible that we're called before we're ready, 
-	//in this case we'll do nothing, until we're ready.
+	++frameId;
 
-	if(!Lock_lock(&ourLock, U64_MAX))
-		return;
+	U16 renderWidth = (U16) I32x2_x(w->size);
+	U16 renderHeight = (U16) I32x2_y(w->size);
+
+	//Queue up work for the jobs
+
+	for(U16 i = 0; i < threadCount; ++i) {
+
+		U16 ySiz = renderHeight / threadCount;
+		U16 yOff = ySiz * i;
+
+		if (i == threadCount - 1)
+			ySiz += renderHeight % threadCount;
+
+		U64 stride = (U64)renderWidth * sizeof(U32);
+
+		Buffer tmp = Buffer_createNull();
+		Error err = Buffer_createSubset(
+			w->cpuVisibleBuffer, 
+			(U64)yOff * stride, 
+			(U64)ySiz * stride, 
+			false, 
+			&tmp
+		);
+
+		if(err.genericError) {
+
+			//Last frame also had an error, we just remember the frameId and move on.
+			//Otherwise we get error spam.
+
+			if (lastErrorFrame + 1 == frameId) {
+				lastErrorFrame = frameId;
+				continue;
+			}
+
+			if (lastErrorFrame != frameId)
+				Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+
+			lastErrorFrame = frameId;
+			continue;
+		}
+
+		RaytracingThread *rtThread = threads + i;
+
+		//Wait until job is done reading
+
+		while(!Lock_lock(&rtThread->lock, 1 * MU))
+			Thread_sleep(1 * MU);
+
+		//Prepare job
+
+		rtThread->imageBuf = (U32*) tmp.ptr;
+
+		rtThread->yOffset = yOff;
+		rtThread->ySize = ySiz;
+		rtThread->hasWork = true;
+
+		//Tell job it can continue.
+
+		Lock_unlock(&rtThread->lock);
+	}
+
+	//Wait for them to complete their job
+
+	for (U16 i = 0; i < threadCount; ++i) {
+
+		RaytracingThread *rtThread = threads + i;
+
+		Bool isActive = true;
+
+		while(isActive) {
+
+			while(!Lock_lock(&rtThread->lock, 1 * MU))
+				Thread_sleep(1 * MU);
+
+			isActive = rtThread->hasWork;
+			Lock_unlock(&rtThread->lock);
+
+			if(isActive)
+				Thread_sleep(1 * MU);
+		}
+	}
 
 	//Just copy it to the result, since we just need to present it
 	//We could render here if we want a dynamic scene
@@ -204,11 +358,10 @@ terminate:
 
 int Program_run() {
 
-	Ns start = Time_now();
-
 	//Init camera, output locations and size and scene
 
-	Quat dir = Quat_fromEuler(F32x4_create3(0, -25, 0));
+	camDir = Quat_fromEuler(F32x4_create3(0, -25, 0));
+	camOrigin = F32x4_zero();
 
 	//Init spheres
 
@@ -221,94 +374,77 @@ int Program_run() {
 
 	U32 spheres = (U32)(sizeof(sph) / sizeof(sph[0]));
 
+	scene.sphereCount = spheres;
+	scene.spheres = sph;
+
 	//Output image
 
 	Error err = Error_none();
-	Buffer bufThreads = Buffer_createNull();
-	ourLock = (Lock) { 0 };
 	Window *wind = NULL;
-	U16 threadId = 0;
-	RaytracingThread *threads = NULL;
+	Buffer bufThreads = Buffer_createNull();
+	U64 threadId = 0;
 
 	//Setup threads
 
-	U16 threadsToRun = (U16)Thread_getLogicalCores();
+	threadCount = (U16)Thread_getLogicalCores();
+	threads = NULL;
 
-	U64 threadsSize = sizeof(RaytracingThread) * threadsToRun;
+	U64 threadsSize = sizeof(RaytracingThread) * threadCount;
 
 	_gotoIfError(clean, Buffer_createUninitializedBytesx(threadsSize, &bufThreads));
 
 	threads = (RaytracingThread*) bufThreads.ptr;
 
-	//Setup lock
+	//Setup jobs
 
-	_gotoIfError(clean, Lock_create(&ourLock));
-
-	if (!Lock_lock(&ourLock, 5 * SECOND))
-		_gotoIfError(clean, Error_timedOut(0, 5 * SECOND));
+	for (; threadId < threadCount; ++threadId) 
+		_gotoIfError(clean, RaytracingThread_create(threads + threadId, (U16) threadId));
 
 	//Setup buffer / window
 
-	if (!WindowManager_lock(&Platform_instance.windowManager, U64_MAX))
-		_gotoIfError(clean, Error_timedOut(0, U64_MAX));
+	WindowManager_lock(&Platform_instance.windowManager, U64_MAX);
 
 	WindowCallbacks callbacks = (WindowCallbacks) { 0 };
 	callbacks.onDraw = onDraw;
+	callbacks.onUpdate = onUpdate;
 
 	_gotoIfError(clean, WindowManager_createWindow(
 		&Platform_instance.windowManager,
-		I32x2_zero(), I32x2_create2(RENDER_WIDTH, RENDER_HEIGHT),
-		EWindowHint_DisableResize | EWindowHint_ProvideCPUBuffer, 
+		I32x2_zero(), I32x2_create2(1920, 1080),
+		EWindowHint_ProvideCPUBuffer, 
 		String_createConstRefUnsafe("Rt core test"),
 		callbacks,
-		(EWindowFormat) FORMAT,
+		EWindowFormat_rgba8,
 		&wind
 	));
-
-	//Start threads
-
-	Camera cam = Camera_create(dir, F32x4_zero(), 45, .01f, 1000.f, (U16)I32x2_x(wind->size), (U16)I32x2_y(wind->size));
-
-	for (; threadId < threadsToRun; ++threadId) 
-		_gotoIfError(clean, RaytracingThread_create(
-			threads + threadId, threadId, threadsToRun,
-			sph, spheres,
-			&cam, SKY_COLOR,
-			(U16)I32x2_x(wind->size), (U16)I32x2_y(wind->size), 
-			wind->cpuVisibleBuffer
-		));
-
-	//Clean up threads
-
-	for (U64 i = 0; i < threadsToRun; ++i)
-		Thread_waitAndCleanup(&threads[i].thread, U32_MAX);
-
-	Buffer_freex(&bufThreads);
-	
-	//Signal our lock as ready for present
-
-	Lock_unlock(&ourLock);
-
-	//Finished render
-
-	Log_debug(ELogOptions_Default, "Finished in %ums", (Time_elapsed(start) + MS - 1) / MS);
 
 	//Wait for user to close the window
 
 	WindowManager_unlock(&Platform_instance.windowManager);			//We don't need to do anything now
 	WindowManager_waitForExitAll(&Platform_instance.windowManager, U64_MAX);
 
-	Lock_free(&ourLock);
-
-	return 0;
+	wind = NULL;
 
 clean:
 
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 
-	if(threads)
-		for(U16 j = 0; j < threadId; ++j)
-			Thread_waitAndCleanup(&threads[j].thread, U32_MAX);
+	for(U16 i = 0; i < threadId; ++i) {
+
+		RaytracingThread *rtThread = threads + i;
+
+		//Properly tell thread to finish work
+
+		while(!Lock_lock(&rtThread->lock, 1 * MU))
+			Thread_sleep(1 * MU);
+
+		rtThread->shouldTerminate = true;
+		Lock_unlock(&rtThread->lock);
+
+		//Wait for thread to exit
+
+		Thread_waitAndCleanup(&rtThread->thread, U32_MAX);
+	}
 
 	if(wind && Lock_lock(&wind->lock, 5 * SECOND)) {
 		Window_terminate(wind);
@@ -317,8 +453,6 @@ clean:
 
 	WindowManager_unlock(&Platform_instance.windowManager);
 
-	Lock_unlock(&ourLock);
-	Lock_free(&ourLock);
 	Buffer_freex(&bufThreads);
 	return 1;
 }
