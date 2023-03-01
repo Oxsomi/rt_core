@@ -184,8 +184,13 @@ F32x4 camOrigin;
 U16 threadCount;
 RaytracingThread *threads;
 
-U64 frameId = 0;
+U64 frameId = 0, framesSinceLastSecond = 0;
+F32 timeSinceLastSecond = 0;
 U64 lastErrorFrame = (U64) -1;
+
+F32 cameraMoveSpeed = 3;
+F32 cameraSpeedUp1 = 2;
+F32 cameraSpeedUp2 = 3;
 
 F32 time = 0;
 
@@ -235,8 +240,59 @@ void onUpdate(Window *w, F32 dt) {
 
 	time += dt;
 
-	if(F32_floor(prevTime) != F32_floor(time))
-		Log_debugLn("%ufps", (U32)F32_round(1 / dt));
+	if(F32_floor(prevTime) != F32_floor(time)) {
+
+		Log_debugLn("%ufps", (U32)F32_round(framesSinceLastSecond / timeSinceLastSecond));
+
+		framesSinceLastSecond = 0;
+		timeSinceLastSecond = 0;
+	}
+
+	timeSinceLastSecond += dt;
+
+	//Update camera
+	//Grab all keyboard values
+
+	F32x4 direction = F32x4_zero();
+
+	Bool anyShiftDown = false;
+	Bool anyCtrlDown = false;
+	
+	for (U64 i = 0; i < w->devices.length; ++i) {
+	
+		const InputDevice *dev = (const InputDevice*) w->devices.ptr + i;
+	
+		if (dev->type != EInputDeviceType_Keyboard)
+			continue;
+	
+		F32 x = (F32)InputDevice_getCurrentState(*dev, EKey_D) - (F32)InputDevice_getCurrentState(*dev, EKey_A);
+		F32 y = (F32)InputDevice_getCurrentState(*dev, EKey_E) - (F32)InputDevice_getCurrentState(*dev, EKey_Q);
+		F32 z = (F32)InputDevice_getCurrentState(*dev, EKey_S) - (F32)InputDevice_getCurrentState(*dev, EKey_W);
+
+		direction = F32x4_add(direction, F32x4_create3(x, y, z));
+
+		if(InputDevice_getCurrentState(*dev, EKey_Shift))
+			anyShiftDown = true;
+
+		if(InputDevice_getCurrentState(*dev, EKey_Ctrl))
+			anyCtrlDown = true;
+	}
+
+	if(F32x4_any(direction)) {
+
+		F32 speed = cameraMoveSpeed;
+
+		if(anyShiftDown)
+			speed *= cameraSpeedUp1;
+
+		if(anyCtrlDown)
+			speed *= cameraSpeedUp2;
+		
+		direction = F32x4_mul(F32x4_normalize4(direction), F32x4_xxxx4(F32_clamp(dt * speed, 0, 1)));
+		direction = Quat_applyToNormal(camDir, direction);
+
+		camOrigin = F32x4_add(camOrigin, direction);
+	}
 
 	//Setup camera
 
@@ -264,6 +320,7 @@ void onUpdate(Window *w, F32 dt) {
 void onDraw(Window *w) {
 
 	++frameId;
+	++framesSinceLastSecond;
 
 	U16 renderWidth = (U16) I32x2_x(w->size);
 	U16 renderHeight = (U16) I32x2_y(w->size);
@@ -370,7 +427,7 @@ int Program_run() {
 
 	//Init camera, output locations and size and scene
 
-	camDir = Quat_fromEuler(F32x4_create3(0, -25, 0));
+	camDir = Quat_fromEuler(F32x4_create3(-90, 0, 0));
 	camOrigin = F32x4_zero();
 
 	//Init spheres
