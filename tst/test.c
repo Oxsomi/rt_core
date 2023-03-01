@@ -22,6 +22,7 @@
 #include "types/buffer.h"
 #include "types/time.h"
 #include "formats/bmp.h"
+#include "platforms/keyboard.h"
 #include "platforms/platform.h"
 #include "platforms/thread.h"
 #include "platforms/window.h"
@@ -219,6 +220,15 @@ clean:
 
 void Program_exit() { }
 
+void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
+
+	if(device->type != EInputDeviceType_Keyboard)
+		return;
+
+	if(isDown && handle == EKey_F11)
+		Window_toggleFullScreen(w);
+}
+
 void onUpdate(Window *w, F32 dt) {
 
 	F32 prevTime = time;
@@ -407,11 +417,13 @@ int Program_run() {
 	WindowCallbacks callbacks = (WindowCallbacks) { 0 };
 	callbacks.onDraw = onDraw;
 	callbacks.onUpdate = onUpdate;
+	callbacks.onDeviceButton = onButton;
 
 	_gotoIfError(clean, WindowManager_createWindow(
 		&Platform_instance.windowManager,
-		I32x2_zero(), I32x2_create2(1920, 1080),
-		EWindowHint_ProvideCPUBuffer, 
+		I32x2_zero(), EResolution_get(EResolution_FHD),
+		I32x2_zero(), I32x2_zero(),
+		EWindowHint_ProvideCPUBuffer | EWindowHint_AllowFullscreen, 
 		String_createConstRefUnsafe("Rt core test"),
 		callbacks,
 		EWindowFormat_rgba8,
