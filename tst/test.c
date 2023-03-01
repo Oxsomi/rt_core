@@ -408,7 +408,7 @@ void onDraw(Window *w) {
 	//We could render here if we want a dynamic scene
 
 	Error err = Error_none();
-	_gotoIfError(clean, Window_presentCPUBuffer(w, String_createConstRefUnsafe("output.bmp"), 1 * SECOND));
+	_gotoIfError(clean, Window_presentCPUBuffer(w, CharString_createConstRefUnsafe("output.bmp"), 1 * SECOND));
 
 	//We need to signal that we're done if we're a virtual window
 
@@ -481,7 +481,7 @@ int Program_run() {
 		I32x2_zero(), EResolution_get(EResolution_FHD),
 		I32x2_zero(), I32x2_zero(),
 		EWindowHint_ProvideCPUBuffer | EWindowHint_AllowFullscreen, 
-		String_createConstRefUnsafe("Rt core test"),
+		CharString_createConstRefUnsafe("Rt core test"),
 		callbacks,
 		EWindowFormat_rgba8,
 		&wind
