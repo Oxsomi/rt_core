@@ -175,7 +175,7 @@ void RaytracingThread_job(RaytracingThread *rtThread) {
 Scene scene;
 
 Camera camera;
-Quat camDir;
+QuatF32 camDir;
 
 I32x2 viewport;
 
@@ -185,14 +185,14 @@ U16 threadCount;
 RaytracingThread *threads;
 
 U64 frameId = 0, framesSinceLastSecond = 0;
-F32 timeSinceLastSecond = 0;
+F64 timeSinceLastSecond = 0;
 U64 lastErrorFrame = (U64) -1;
 
 F32 cameraMoveSpeed = 3;
 F32 cameraSpeedUp1 = 2;
 F32 cameraSpeedUp2 = 3;
 
-F32 time = 0;
+F64 time = 0;
 
 //
 
@@ -234,15 +234,15 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 		Window_toggleFullScreen(w);
 }
 
-void onUpdate(Window *w, F32 dt) {
+void onUpdate(Window *w, F64 dt) {
 
-	F32 prevTime = time;
+	F64 prevTime = time;
 
 	time += dt;
 
-	if(F32_floor(prevTime) != F32_floor(time)) {
+	if(F64_floor(prevTime) != F64_floor(time)) {
 
-		Log_debugLn("%ufps", (U32)F32_round(framesSinceLastSecond / timeSinceLastSecond));
+		Log_debugLn("%"PRIu32" fps", (U32)F64_round(framesSinceLastSecond / timeSinceLastSecond));
 
 		framesSinceLastSecond = 0;
 		timeSinceLastSecond = 0;
@@ -288,8 +288,8 @@ void onUpdate(Window *w, F32 dt) {
 		if(anyCtrlDown)
 			speed *= cameraSpeedUp2;
 		
-		direction = F32x4_mul(F32x4_normalize4(direction), F32x4_xxxx4(F32_clamp(dt * speed, 0, 1)));
-		direction = Quat_applyToNormal(camDir, direction);
+		direction = F32x4_mul(F32x4_normalize4(direction), F32x4_xxxx4((F32) F64_clamp(dt * speed, 0, 1)));
+		direction = QuatF32_applyToNormal(camDir, direction);
 
 		camOrigin = F32x4_add(camOrigin, direction);
 	}
@@ -313,7 +313,7 @@ void onUpdate(Window *w, F32 dt) {
 
 	//Animate sky color
 
-	F32 perc = F32_cos(time) * 0.5f + 0.5f;
+	F32 perc = (F32)F64_cos(time) * 0.5f + 0.5f;
 	scene.skyColor = F32x4_mul(F32x4_create4(0.25f, 0.5f, 1, 1), F32x4_xxxx4(perc));
 }
 
@@ -427,7 +427,7 @@ int Program_run() {
 
 	//Init camera, output locations and size and scene
 
-	camDir = Quat_fromEuler(F32x4_create3(-90, 0, 0));
+	camDir = QuatF32_fromEuler(F32x4_create3(-90, 0, 0));
 	camOrigin = F32x4_zero();
 
 	//Init spheres

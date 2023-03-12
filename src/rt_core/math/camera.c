@@ -22,7 +22,7 @@
 #include "math/math.h"
 
 Camera Camera_create(
-	Quat q, 
+	QuatF32 q, 
 	F32x4 pos, 
 	F32 fovDeg, 
 	F32 near, 
