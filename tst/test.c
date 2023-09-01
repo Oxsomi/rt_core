@@ -31,6 +31,8 @@
 #include "platforms/ext/errorx.h"
 #include "platforms/ext/bufferx.h"
 #include "platforms/ext/stringx.h"
+#include "graphics/generic/instance.h"
+#include "graphics/generic/device.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -242,7 +244,7 @@ void onUpdate(Window *w, F64 dt) {
 
 	if(F64_floor(prevTime) != F64_floor(time)) {
 
-		Log_debugLn("%"PRIu32" fps", (U32)F64_round(framesSinceLastSecond / timeSinceLastSecond));
+		Log_debugLn("%u fps", (U32)F64_round(framesSinceLastSecond / timeSinceLastSecond));
 
 		framesSinceLastSecond = 0;
 		timeSinceLastSecond = 0;
@@ -408,7 +410,7 @@ void onDraw(Window *w) {
 	//We could render here if we want a dynamic scene
 
 	Error err = Error_none();
-	_gotoIfError(clean, Window_presentCPUBuffer(w, CharString_createConstRefUnsafe("output.bmp"), 1 * SECOND));
+	_gotoIfError(clean, Window_presentCPUBuffer(w, CharString_createConstRefCStr("output.bmp"), 1 * SECOND));
 
 	//We need to signal that we're done if we're a virtual window
 
@@ -449,7 +451,34 @@ int Program_run() {
 	Error err = Error_none();
 	Window *wind = NULL;
 	Buffer bufThreads = Buffer_createNull();
+	GraphicsInstance graphicsInstance = (GraphicsInstance) { 0 };
 	U64 threadId = 0;
+
+	//Graphics test
+
+	GraphicsApplicationInfo applicationInfo = (GraphicsApplicationInfo) {
+		.name = CharString_createConstRefCStr("Rt core test"),
+		.version = GraphicsApplicationInfo_Version(0, 2, 0)
+	};
+
+	GraphicsDeviceCapabilities requiredCapabilities = (GraphicsDeviceCapabilities) { 0 };
+	GraphicsDevice device = (GraphicsDevice) { 0 };
+
+	Bool isVerbose = true;
+
+	_gotoIfError(clean, GraphicsInstance_create(applicationInfo, isVerbose, &graphicsInstance));
+	_gotoIfError(clean, GraphicsInstance_getPreferredGpu(
+		&graphicsInstance,
+		requiredCapabilities,
+		GraphicsInstance_vendorMaskAll,
+		GraphicsInstance_deviceTypeAll,
+		isVerbose,
+		&device.info
+	));
+
+	GraphicsDeviceInfo_print(&device.info, true);
+
+	_gotoIfError(clean, GraphicsDevice_create(&graphicsInstance, &device.info, isVerbose, &device));
 
 	//Setup threads
 
@@ -481,7 +510,7 @@ int Program_run() {
 		I32x2_zero(), EResolution_get(EResolution_FHD),
 		I32x2_zero(), I32x2_zero(),
 		EWindowHint_ProvideCPUBuffer | EWindowHint_AllowFullscreen, 
-		CharString_createConstRefUnsafe("Rt core test"),
+		CharString_createConstRefCStr("Rt core test"),
 		callbacks,
 		EWindowFormat_rgba8,
 		&wind
@@ -521,6 +550,9 @@ clean:
 	}
 
 	WindowManager_unlock(&Platform_instance.windowManager);
+
+	GraphicsDevice_free(&graphicsInstance, &device);
+	GraphicsInstance_free(&graphicsInstance);
 
 	Buffer_freex(&bufThreads);
 	return 1;

@@ -56,7 +56,7 @@ set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/raytracing)
 add_subdirectory(core3)
 
 target_include_directories(rt_core PUBLIC inc/rt_core)
-target_link_libraries(rt_core PUBLIC OxC3_platforms)
+target_link_libraries(rt_core PUBLIC OxC3_graphics)
 
 # add_virtual_files(TARGET rt_core NAME shaders ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders)
 
