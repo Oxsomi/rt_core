@@ -33,6 +33,7 @@
 #include "platforms/ext/stringx.h"
 #include "graphics/generic/instance.h"
 #include "graphics/generic/device.h"
+#include "graphics/generic/swapchain.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -425,6 +426,23 @@ terminate:
 		Window_terminate(w);
 }
 
+GraphicsDevice *graphicsDevice = NULL;
+Swapchain swapchain;
+
+void onResize(Window *w) {
+
+	//Only create swapchain if window is physical
+
+	if(!(w->flags & EWindowFlags_IsVirtual)) {
+
+		GraphicsDevice_freeSwapchain(graphicsDevice, &swapchain);
+
+		Error err = GraphicsDevice_createSwapchain(graphicsDevice, (SwapchainInfo) { .window = w }, &swapchain);
+		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+	}
+
+}
+
 int Program_run() {
 
 	//Init camera, output locations and size and scene
@@ -464,9 +482,10 @@ int Program_run() {
 	GraphicsDeviceCapabilities requiredCapabilities = (GraphicsDeviceCapabilities) { 0 };
 	GraphicsDevice device = (GraphicsDevice) { 0 };
 
-	Bool isVerbose = true;
+	Bool isVerbose = false;
 
 	_gotoIfError(clean, GraphicsInstance_create(applicationInfo, isVerbose, &graphicsInstance));
+
 	_gotoIfError(clean, GraphicsInstance_getPreferredGpu(
 		&graphicsInstance,
 		requiredCapabilities,
@@ -479,6 +498,9 @@ int Program_run() {
 	GraphicsDeviceInfo_print(&device.info, true);
 
 	_gotoIfError(clean, GraphicsDevice_create(&graphicsInstance, &device.info, isVerbose, &device));
+
+	graphicsDevice = &device;
+	swapchain = (Swapchain) { 0 };
 
 	//Setup threads
 
@@ -504,6 +526,7 @@ int Program_run() {
 	callbacks.onDraw = onDraw;
 	callbacks.onUpdate = onUpdate;
 	callbacks.onDeviceButton = onButton;
+	callbacks.onResize = onResize;
 
 	_gotoIfError(clean, WindowManager_createWindow(
 		&Platform_instance.windowManager,
@@ -551,7 +574,8 @@ clean:
 
 	WindowManager_unlock(&Platform_instance.windowManager);
 
-	GraphicsDevice_free(&graphicsInstance, &device);
+	GraphicsDevice_freeSwapchain(&device, &swapchain);
+	GraphicsDevice_free(&device);
 	GraphicsInstance_free(&graphicsInstance);
 
 	Buffer_freex(&bufThreads);
