@@ -427,7 +427,7 @@ terminate:
 }
 
 GraphicsDevice *graphicsDevice = NULL;
-Swapchain swapchain;
+SwapchainRef *swapchain = NULL;
 
 void onResize(Window *w) {
 
@@ -435,7 +435,7 @@ void onResize(Window *w) {
 
 	if(!(w->flags & EWindowFlags_IsVirtual)) {
 
-		GraphicsDevice_freeSwapchain(graphicsDevice, &swapchain);
+		SwapchainRef_dec(&swapchain);
 
 		Error err = GraphicsDevice_createSwapchain(graphicsDevice, (SwapchainInfo) { .window = w }, &swapchain);
 		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
@@ -500,7 +500,6 @@ int Program_run() {
 	_gotoIfError(clean, GraphicsDevice_create(&graphicsInstance, &device.info, isVerbose, &device));
 
 	graphicsDevice = &device;
-	swapchain = (Swapchain) { 0 };
 
 	//Setup threads
 
@@ -574,7 +573,7 @@ clean:
 
 	WindowManager_unlock(&Platform_instance.windowManager);
 
-	GraphicsDevice_freeSwapchain(&device, &swapchain);
+	SwapchainRef_dec(&swapchain);
 	GraphicsDevice_free(&device);
 	GraphicsInstance_free(&graphicsInstance);
 
