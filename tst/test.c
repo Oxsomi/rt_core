@@ -429,21 +429,31 @@ terminate:
 GraphicsInstanceRef *instance = NULL;
 GraphicsDeviceRef *device = NULL;
 SwapchainRef *swapchain = NULL;
+//CommandListRef *commandList = NULL;
 
 void onResize(Window *w) {
 
 	//Only create swapchain if window is physical
 
-	if(!(w->flags & EWindowFlags_IsVirtual)) {
+	if(!(w->flags & EWindowFlags_IsVirtual))
+		Swapchain_resize(SwapchainRef_ptr(swapchain));
+}
 
-		SwapchainRef_dec(&swapchain);
+void onCreate(Window *w) {
+
+	if(!(w->flags & EWindowFlags_IsVirtual)) {
 
 		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w };
 
 		Error err = GraphicsDeviceRef_createSwapchain(device, swapchainInfo, &swapchain);
 		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 	}
+}
 
+void onDestroy(Window *w) {
+
+	if(!(w->flags & EWindowFlags_IsVirtual))
+		SwapchainRef_dec(&swapchain);
 }
 
 int Program_run() {
@@ -500,6 +510,7 @@ int Program_run() {
 	GraphicsDeviceInfo_print(&deviceInfo, true);
 
 	_gotoIfError(clean, GraphicsDevice_create(instance, &deviceInfo, isVerbose, &device));
+	//_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, &commandList));
 
 	//Setup threads
 
@@ -526,6 +537,8 @@ int Program_run() {
 	callbacks.onUpdate = onUpdate;
 	callbacks.onDeviceButton = onButton;
 	callbacks.onResize = onResize;
+	callbacks.onCreate = onCreate;
+	callbacks.onDestroy = onDestroy;
 
 	_gotoIfError(clean, WindowManager_createWindow(
 		&Platform_instance.windowManager,
@@ -573,7 +586,7 @@ clean:
 
 	WindowManager_unlock(&Platform_instance.windowManager);
 
-	SwapchainRef_dec(&swapchain);
+	//CommandListRef_dec(&commandList);
 	GraphicsDeviceRef_dec(&device);
 	GraphicsInstanceRef_dec(&instance);
 
