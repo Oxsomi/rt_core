@@ -426,7 +426,8 @@ terminate:
 		Window_terminate(w);
 }
 
-GraphicsDevice *graphicsDevice = NULL;
+GraphicsInstanceRef *instance = NULL;
+GraphicsDeviceRef *device = NULL;
 SwapchainRef *swapchain = NULL;
 
 void onResize(Window *w) {
@@ -437,7 +438,9 @@ void onResize(Window *w) {
 
 		SwapchainRef_dec(&swapchain);
 
-		Error err = GraphicsDevice_createSwapchain(graphicsDevice, (SwapchainInfo) { .window = w }, &swapchain);
+		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w };
+
+		Error err = GraphicsDeviceRef_createSwapchain(device, swapchainInfo, &swapchain);
 		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 	}
 
@@ -469,7 +472,6 @@ int Program_run() {
 	Error err = Error_none();
 	Window *wind = NULL;
 	Buffer bufThreads = Buffer_createNull();
-	GraphicsInstance graphicsInstance = (GraphicsInstance) { 0 };
 	U64 threadId = 0;
 
 	//Graphics test
@@ -480,26 +482,24 @@ int Program_run() {
 	};
 
 	GraphicsDeviceCapabilities requiredCapabilities = (GraphicsDeviceCapabilities) { 0 };
-	GraphicsDevice device = (GraphicsDevice) { 0 };
+	GraphicsDeviceInfo deviceInfo = (GraphicsDeviceInfo) { 0 };
 
 	Bool isVerbose = false;
 
-	_gotoIfError(clean, GraphicsInstance_create(applicationInfo, isVerbose, &graphicsInstance));
+	_gotoIfError(clean, GraphicsInstance_create(applicationInfo, isVerbose, &instance));
 
 	_gotoIfError(clean, GraphicsInstance_getPreferredGpu(
-		&graphicsInstance,
+		GraphicsInstanceRef_ptr(instance),
 		requiredCapabilities,
 		GraphicsInstance_vendorMaskAll,
 		GraphicsInstance_deviceTypeAll,
 		isVerbose,
-		&device.info
+		&deviceInfo
 	));
 
-	GraphicsDeviceInfo_print(&device.info, true);
+	GraphicsDeviceInfo_print(&deviceInfo, true);
 
-	_gotoIfError(clean, GraphicsDevice_create(&graphicsInstance, &device.info, isVerbose, &device));
-
-	graphicsDevice = &device;
+	_gotoIfError(clean, GraphicsDevice_create(instance, &deviceInfo, isVerbose, &device));
 
 	//Setup threads
 
@@ -574,8 +574,8 @@ clean:
 	WindowManager_unlock(&Platform_instance.windowManager);
 
 	SwapchainRef_dec(&swapchain);
-	GraphicsDevice_free(&device);
-	GraphicsInstance_free(&graphicsInstance);
+	GraphicsDeviceRef_dec(&device);
+	GraphicsInstanceRef_dec(&instance);
 
 	Buffer_freex(&bufThreads);
 	return 1;
