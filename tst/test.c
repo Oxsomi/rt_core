@@ -431,7 +431,7 @@ void onDraw(Window *w) {
 		List swapchains = (List) { 0 };
 
 		_gotoIfError(clean, List_createConstRef((const U8*) &commandList, 1, sizeof(commandList), &commandLists));
-		//_gotoIfError(clean, List_createConstRef((const U8*) &swapchain, 1, sizeof(swapchain), &swapchains));
+		_gotoIfError(clean, List_createConstRef((const U8*) &swapchain, 1, sizeof(swapchain), &swapchains));
 
 		_gotoIfError(clean, GraphicsDeviceRef_submitCommands(device, commandLists, swapchains));
 	}
