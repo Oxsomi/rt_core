@@ -34,6 +34,7 @@
 #include "graphics/generic/instance.h"
 #include "graphics/generic/device.h"
 #include "graphics/generic/swapchain.h"
+#include "graphics/generic/command_list.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -320,98 +321,120 @@ void onUpdate(Window *w, F64 dt) {
 	scene.skyColor = F32x4_mul(F32x4_create4(0.25f, 0.5f, 1, 1), F32x4_xxxx4(perc));
 }
 
+GraphicsInstanceRef *instance = NULL;
+GraphicsDeviceRef *device = NULL;
+SwapchainRef *swapchain = NULL;
+CommandListRef *commandList = NULL;
+
 void onDraw(Window *w) {
 
 	++frameId;
 	++framesSinceLastSecond;
 
-	U16 renderWidth = (U16) I32x2_x(w->size);
-	U16 renderHeight = (U16) I32x2_y(w->size);
+	Error err = Error_none();
 
-	//Queue up work for the jobs
+	//Queue up work for the jobs for CPU-only rendering
 
-	for(U16 i = 0; i < threadCount; ++i) {
+	if (w->flags & EWindowFlags_IsVirtual) {
 
-		U16 ySiz = renderHeight / threadCount;
-		U16 yOff = ySiz * i;
+		U16 renderWidth = (U16) I32x2_x(w->size);
+		U16 renderHeight = (U16) I32x2_y(w->size);
 
-		if (i == threadCount - 1)
-			ySiz += renderHeight % threadCount;
+		for(U16 i = 0; i < threadCount; ++i) {
 
-		U64 stride = (U64)renderWidth * sizeof(U32);
+			U16 ySiz = renderHeight / threadCount;
+			U16 yOff = ySiz * i;
 
-		Buffer tmp = Buffer_createNull();
-		Error err = Buffer_createSubset(
-			w->cpuVisibleBuffer, 
-			(U64)yOff * stride, 
-			(U64)ySiz * stride, 
-			false, 
-			&tmp
-		);
+			if (i == threadCount - 1)
+				ySiz += renderHeight % threadCount;
 
-		if(err.genericError) {
+			U64 stride = (U64)renderWidth * sizeof(U32);
 
-			//Last frame also had an error, we just remember the frameId and move on.
-			//Otherwise we get error spam.
+			Buffer tmp = Buffer_createNull();
+			err = Buffer_createSubset(
+				w->cpuVisibleBuffer, 
+				(U64)yOff * stride, 
+				(U64)ySiz * stride, 
+				false, 
+				&tmp
+			);
 
-			if (lastErrorFrame + 1 == frameId) {
+			if(err.genericError) {
+
+				//Last frame also had an error, we just remember the frameId and move on.
+				//Otherwise we get error spam.
+
+				if (lastErrorFrame + 1 == frameId) {
+					lastErrorFrame = frameId;
+					continue;
+				}
+
+				if (lastErrorFrame != frameId)
+					Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+
 				lastErrorFrame = frameId;
 				continue;
 			}
 
-			if (lastErrorFrame != frameId)
-				Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+			RaytracingThread *rtThread = threads + i;
 
-			lastErrorFrame = frameId;
-			continue;
-		}
-
-		RaytracingThread *rtThread = threads + i;
-
-		//Wait until job is done reading
-
-		while(!Lock_lock(&rtThread->lock, 1 * MU))
-			Thread_sleep(1 * MU);
-
-		//Prepare job
-
-		rtThread->imageBuf = (U32*) tmp.ptr;
-
-		rtThread->yOffset = yOff;
-		rtThread->ySize = ySiz;
-		rtThread->hasWork = true;
-
-		//Tell job it can continue.
-
-		Lock_unlock(&rtThread->lock);
-	}
-
-	//Wait for them to complete their job
-
-	for (U16 i = 0; i < threadCount; ++i) {
-
-		RaytracingThread *rtThread = threads + i;
-
-		Bool isActive = true;
-
-		while(isActive) {
+			//Wait until job is done reading
 
 			while(!Lock_lock(&rtThread->lock, 1 * MU))
 				Thread_sleep(1 * MU);
 
-			isActive = rtThread->hasWork;
-			Lock_unlock(&rtThread->lock);
+			//Prepare job
 
-			if(isActive)
-				Thread_sleep(1 * MU);
+			rtThread->imageBuf = (U32*) tmp.ptr;
+
+			rtThread->yOffset = yOff;
+			rtThread->ySize = ySiz;
+			rtThread->hasWork = true;
+
+			//Tell job it can continue.
+
+			Lock_unlock(&rtThread->lock);
 		}
+
+		//Wait for them to complete their job
+
+		for (U16 i = 0; i < threadCount; ++i) {
+
+			RaytracingThread *rtThread = threads + i;
+
+			Bool isActive = true;
+
+			while(isActive) {
+
+				while(!Lock_lock(&rtThread->lock, 1 * MU))
+					Thread_sleep(1 * MU);
+
+				isActive = rtThread->hasWork;
+				Lock_unlock(&rtThread->lock);
+
+				if(isActive)
+					Thread_sleep(1 * MU);
+			}
+		}
+
+		//Just copy it to the result, since we just need to present it
+		//We could render here if we want a dynamic scene
+
+		_gotoIfError(clean, Window_presentCPUBuffer(w, CharString_createConstRefCStr("output.bmp"), 1 * SECOND));
 	}
 
-	//Just copy it to the result, since we just need to present it
-	//We could render here if we want a dynamic scene
+	//We only have to submit commands
 
-	Error err = Error_none();
-	_gotoIfError(clean, Window_presentCPUBuffer(w, CharString_createConstRefCStr("output.bmp"), 1 * SECOND));
+	else {
+
+		List commandLists = (List) { 0 };
+		List swapchains = (List) { 0 };
+
+		_gotoIfError(clean, List_createConstRef((const U8*) &commandList, 1, sizeof(commandList), &commandLists));
+		//_gotoIfError(clean, List_createConstRef((const U8*) &swapchain, 1, sizeof(swapchain), &swapchains));
+
+		_gotoIfError(clean, GraphicsDeviceRef_submitCommands(device, commandLists, swapchains));
+	}
 
 	//We need to signal that we're done if we're a virtual window
 
@@ -425,11 +448,6 @@ terminate:
 	if(Window_isVirtual(w))
 		Window_terminate(w);
 }
-
-GraphicsInstanceRef *instance = NULL;
-GraphicsDeviceRef *device = NULL;
-SwapchainRef *swapchain = NULL;
-//CommandListRef *commandList = NULL;
 
 void onResize(Window *w) {
 
@@ -509,8 +527,14 @@ int Program_run() {
 
 	GraphicsDeviceInfo_print(&deviceInfo, true);
 
-	_gotoIfError(clean, GraphicsDevice_create(instance, &deviceInfo, isVerbose, &device));
-	//_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, &commandList));
+	_gotoIfError(clean, GraphicsDeviceRef_create(instance, &deviceInfo, isVerbose, &device));
+	_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, 4 * KIBI, 128, KIBI, &commandList));
+
+	//Record commands
+
+	_gotoIfError(clean, CommandListRef_begin(commandList, true));
+	//_gotoIfError(clean, CommandListRef_clearColorf(commandList, F32x4_create4(1, 0, 0, 1)));
+	_gotoIfError(clean, CommandListRef_end(commandList));
 
 	//Setup threads
 
@@ -544,7 +568,8 @@ int Program_run() {
 		&Platform_instance.windowManager,
 		I32x2_zero(), EResolution_get(EResolution_FHD),
 		I32x2_zero(), I32x2_zero(),
-		EWindowHint_ProvideCPUBuffer | EWindowHint_AllowFullscreen, 
+		(WindowManager_MAX_PHYSICAL_WINDOWS == 0 ? EWindowHint_ProvideCPUBuffer : 0) | 
+		EWindowHint_AllowFullscreen, 
 		CharString_createConstRefCStr("Rt core test"),
 		callbacks,
 		EWindowFormat_rgba8,
@@ -586,7 +611,8 @@ clean:
 
 	WindowManager_unlock(&Platform_instance.windowManager);
 
-	//CommandListRef_dec(&commandList);
+	GraphicsDeviceRef_wait(device);
+	CommandListRef_dec(&commandList);
 	GraphicsDeviceRef_dec(&device);
 	GraphicsInstanceRef_dec(&instance);
 
