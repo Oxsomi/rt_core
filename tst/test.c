@@ -465,6 +465,24 @@ void onCreate(Window *w) {
 
 		Error err = GraphicsDeviceRef_createSwapchain(device, swapchainInfo, &swapchain);
 		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+
+		if (!err.genericError && !commandList) {
+
+			_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, 4 * KIBI, 128, KIBI, &commandList));
+
+			//Record commands
+
+			_gotoIfError(clean, CommandListRef_begin(commandList, true));
+
+			_gotoIfError(clean, CommandListRef_clearImagef(
+				commandList, F32x4_create4(1, 0, 0, 1), (ImageRange) { .image = swapchain }
+			));
+
+			_gotoIfError(clean, CommandListRef_end(commandList));
+
+		clean:
+			Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+		}
 	}
 }
 
@@ -528,13 +546,6 @@ int Program_run() {
 	GraphicsDeviceInfo_print(&deviceInfo, true);
 
 	_gotoIfError(clean, GraphicsDeviceRef_create(instance, &deviceInfo, isVerbose, &device));
-	_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, 4 * KIBI, 128, KIBI, &commandList));
-
-	//Record commands
-
-	_gotoIfError(clean, CommandListRef_begin(commandList, true));
-	//_gotoIfError(clean, CommandListRef_clearColorf(commandList, F32x4_create4(1, 0, 0, 1)));
-	_gotoIfError(clean, CommandListRef_end(commandList));
 
 	//Setup threads
 
