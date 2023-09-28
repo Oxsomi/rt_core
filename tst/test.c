@@ -35,6 +35,7 @@
 #include "graphics/generic/device.h"
 #include "graphics/generic/swapchain.h"
 #include "graphics/generic/command_list.h"
+#include "graphics/generic/pipeline.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -325,6 +326,7 @@ GraphicsInstanceRef *instance = NULL;
 GraphicsDeviceRef *device = NULL;
 SwapchainRef *swapchain = NULL;
 CommandListRef *commandList = NULL;
+List computeShaders;
 
 void onDraw(Window *w) {
 
@@ -468,16 +470,26 @@ void onCreate(Window *w) {
 
 		if (!err.genericError && !commandList) {
 
-			_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, 4 * KIBI, 128, KIBI, &commandList));
+			_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, 4 * KIBI, 128, KIBI, true, &commandList));
 
 			//Record commands
 
+			AttachmentInfo attachmentInfo = (AttachmentInfo) {
+				.image = swapchain,
+				.load = ELoadAttachmentType_Clear,
+				.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
+			};
+
+			List colors = (List) { 0 };
+			_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
+
 			_gotoIfError(clean, CommandListRef_begin(commandList, true));
-
-			_gotoIfError(clean, CommandListRef_clearImagef(
-				commandList, F32x4_create4(1, 0, 0, 1), (ImageRange) { .image = swapchain }
-			));
-
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[0]));
+			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, 1920, 1080));		//TODO: Allow specifying resource
+			//_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, graphicsPipeline));
+			//_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
+			//_gotoIfError(clean, CommandListRef_draw(commandList, (Draw) { .count = 3, .instanceCount = 1 }));
+			//_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
 			_gotoIfError(clean, CommandListRef_end(commandList));
 
 		clean:
@@ -534,7 +546,7 @@ int Program_run() {
 
 	_gotoIfError(clean, GraphicsInstance_create(applicationInfo, isVerbose, &instance));
 
-	_gotoIfError(clean, GraphicsInstance_getPreferredGpu(
+	_gotoIfError(clean, GraphicsInstance_getPreferredDevice(
 		GraphicsInstanceRef_ptr(instance),
 		requiredCapabilities,
 		GraphicsInstance_vendorMaskAll,
@@ -546,6 +558,15 @@ int Program_run() {
 	GraphicsDeviceInfo_print(&deviceInfo, true);
 
 	_gotoIfError(clean, GraphicsDeviceRef_create(instance, &deviceInfo, isVerbose, &device));
+
+	computeShaders = (List) { 0 };
+
+	//Create pipelines
+
+	Buffer testCompute = ...;		//TODO:
+	List computeBinaries = (List) { 0 };
+	_gotoIfError(clean, List_createConstRef(&testCompute, 1, sizeof(Buffer), &computeBinaries));
+	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, computeBinaries, &computeShaders));
 
 	//Setup threads
 
@@ -622,6 +643,7 @@ clean:
 
 	WindowManager_unlock(&Platform_instance.windowManager);
 
+	PipelineRef_decAll(&computeShaders);
 	GraphicsDeviceRef_wait(device);
 	CommandListRef_dec(&commandList);
 	GraphicsDeviceRef_dec(&device);
