@@ -453,10 +453,59 @@ terminate:
 
 void onResize(Window *w) {
 
+	Error err = Error_none();
+
 	//Only create swapchain if window is physical
 
-	if(!(w->flags & EWindowFlags_IsVirtual))
-		Swapchain_resize(SwapchainRef_ptr(swapchain));
+	if (w->flags & EWindowFlags_IsVirtual)
+		_gotoIfError(clean, Error_unsupportedOperation(0));
+
+	_gotoIfError(clean, Swapchain_resize(SwapchainRef_ptr(swapchain)));
+
+	//Record commands
+
+	_gotoIfError(clean, CommandListRef_begin(commandList, true));
+
+	Transition transitions[] = {
+		(Transition) {
+			.resource = swapchain,
+			.range = (ImageRange) { 0 },
+			.stage = EPipelineStage_Compute,
+			.isWrite = true
+		}
+	};
+
+	List transitionArr = (List) { 0 };
+	_gotoIfError(clean, List_createConstRef((const U8*) transitions, 1, sizeof(Transition), &transitionArr));
+
+	Swapchain *swapchainPtr = SwapchainRef_ptr(swapchain);
+
+	U32 tilesX = (U32)(I32x2_x(swapchainPtr->size) + 15) >> 4;
+	U32 tilesY = (U32)(I32x2_y(swapchainPtr->size) + 15) >> 4;
+
+	_gotoIfError(clean, CommandListRef_transition(commandList, transitionArr));
+	_gotoIfError(clean, CommandListRef_setPipeline(commandList, ((PipelineRef**)computeShaders.ptr)[0]));
+	_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
+
+	/*
+	AttachmentInfo attachmentInfo = (AttachmentInfo) {
+		.image = swapchain,
+		.load = ELoadAttachmentType_Clear,
+		.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
+	};
+
+	List colors = (List) { 0 };
+	_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
+
+	_gotoIfError(clean, CommandListRef_setPipeline(commandList, graphicsPipeline));
+	_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
+	_gotoIfError(clean, CommandListRef_draw(commandList, (Draw) { .count = 3, .instanceCount = 1 }));
+	_gotoIfError(clean, CommandListRef_endRenderExt(commandList));*/
+
+	_gotoIfError(clean, CommandListRef_end(commandList));
+
+clean:
+	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
 
 void onCreate(Window *w) {
@@ -469,30 +518,7 @@ void onCreate(Window *w) {
 		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 
 		if (!err.genericError && !commandList) {
-
-			_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, 4 * KIBI, 128, KIBI, true, &commandList));
-
-			//Record commands
-
-			AttachmentInfo attachmentInfo = (AttachmentInfo) {
-				.image = swapchain,
-				.load = ELoadAttachmentType_Clear,
-				.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
-			};
-
-			List colors = (List) { 0 };
-			_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
-
-			_gotoIfError(clean, CommandListRef_begin(commandList, true));
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[0]));
-			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, 1920, 1080));		//TODO: Allow specifying resource
-			//_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, graphicsPipeline));
-			//_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
-			//_gotoIfError(clean, CommandListRef_draw(commandList, (Draw) { .count = 3, .instanceCount = 1 }));
-			//_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
-			_gotoIfError(clean, CommandListRef_end(commandList));
-
-		clean:
+			err = GraphicsDeviceRef_createCommandList(device, 4 * KIBI, 128, KIBI, true, &commandList);
 			Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 		}
 	}
@@ -530,6 +556,7 @@ int Program_run() {
 	Error err = Error_none();
 	Window *wind = NULL;
 	Buffer bufThreads = Buffer_createNull();
+	Buffer tempShader = Buffer_createNull();
 	U64 threadId = 0;
 
 	//Graphics test
@@ -563,10 +590,12 @@ int Program_run() {
 
 	//Create pipelines
 
-	Buffer testCompute = ...;		//TODO:
+	tempShader = ...;		//TODO: Load from virtual or local file, or hardcode
 	List computeBinaries = (List) { 0 };
-	_gotoIfError(clean, List_createConstRef(&testCompute, 1, sizeof(Buffer), &computeBinaries));
-	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, computeBinaries, &computeShaders));
+	_gotoIfError(clean, List_createConstRef(&tempShader, 1, sizeof(Buffer), &computeBinaries));
+	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, &computeBinaries, &computeShaders));
+
+	tempShader = Buffer_createNull();
 
 	//Setup threads
 
@@ -643,6 +672,7 @@ clean:
 
 	WindowManager_unlock(&Platform_instance.windowManager);
 
+	Buffer_freex(&tempShader);
 	PipelineRef_decAll(&computeShaders);
 	GraphicsDeviceRef_wait(device);
 	CommandListRef_dec(&commandList);
