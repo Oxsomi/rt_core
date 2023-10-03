@@ -61,12 +61,16 @@ target_link_libraries(rt_core PUBLIC OxC3_graphics)
 # add_virtual_files(TARGET rt_core NAME shaders ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders)
 
 file(GLOB_RECURSE tests "tst/*.c")
+file(GLOB_RECURSE shaders "src/*.hlsl")
 
 add_executable(
 	rt_core_tests
 	${tests}
+	${shaders}
 	CMakeLists.txt
 )
+
+source_group("Shaders" FILES ${shaders})
 
 set_target_properties(rt_core_tests PROPERTIES FOLDER Oxsomi/raytracing/test)
 
