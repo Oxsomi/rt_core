@@ -590,9 +590,13 @@ int Program_run() {
 
 	//Create pipelines
 
-	tempShader = ...;		//TODO: Load from virtual or local file, or hardcode
+	CharString shaders = CharString_createConstRefCStr("//rt_core/shaders");
+	_gotoIfError(clean, File_loadVirtual(shaders, NULL));
+
+	CharString testPath = CharString_createConstRefCStr("//rt_core/shaders/compute_test");
+	_gotoIfError(clean, File_read(testPath, U64_MAX, &tempShader));
 	List computeBinaries = (List) { 0 };
-	_gotoIfError(clean, List_createConstRef(&tempShader, 1, sizeof(Buffer), &computeBinaries));
+	_gotoIfError(clean, List_createConstRef((const U8*) &tempShader, 1, sizeof(Buffer), &computeBinaries));
 	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, &computeBinaries, &computeShaders));
 
 	tempShader = Buffer_createNull();

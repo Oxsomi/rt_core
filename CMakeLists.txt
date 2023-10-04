@@ -51,6 +51,8 @@ add_library(
 	CMakeLists.txt
 )
 
+# file(GLOB_RECURSE shaders "src/*.hlsl")
+
 set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/raytracing)
 
 add_subdirectory(core3)
@@ -58,24 +60,33 @@ add_subdirectory(core3)
 target_include_directories(rt_core PUBLIC inc/rt_core)
 target_link_libraries(rt_core PUBLIC OxC3_graphics)
 
-# add_virtual_files(TARGET rt_core NAME shaders ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders)
+get_property(graphicsApi GLOBAL PROPERTY graphicsApi)
+
+if("${graphicsApi}" STREQUAL "vulkan")
+	set("shaderBinary" "spirv")
+else()
+	set("shaderBinary" "dxil")
+endif()
+
+message("-- Targeting ${shaderBinary}")
+add_virtual_files(
+	TARGET rt_core NAME shaders 
+	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/${shaderBinary} 
+	SELF ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
 file(GLOB_RECURSE tests "tst/*.c")
-file(GLOB_RECURSE shaders "src/*.hlsl")
 
 add_executable(
 	rt_core_tests
 	${tests}
-	${shaders}
 	CMakeLists.txt
 )
-
-source_group("Shaders" FILES ${shaders})
 
 set_target_properties(rt_core_tests PROPERTIES FOLDER Oxsomi/raytracing/test)
 
 target_link_libraries(rt_core_tests PUBLIC rt_core)
 
-# add_virtual_dependencies(TARGET rt_core_tests DEPENDENCIES rt_core)
+add_virtual_dependencies(TARGET rt_core_tests DEPENDENCIES rt_core)
 configure_icon(rt_core_tests "${CMAKE_CURRENT_SOURCE_DIR}/res/logo.ico")
 configure_virtual_files(rt_core_tests)
