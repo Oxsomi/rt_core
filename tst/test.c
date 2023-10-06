@@ -435,7 +435,7 @@ void onDraw(Window *w) {
 		_gotoIfError(clean, List_createConstRef((const U8*) &commandList, 1, sizeof(commandList), &commandLists));
 		_gotoIfError(clean, List_createConstRef((const U8*) &swapchain, 1, sizeof(swapchain), &swapchains));
 
-		_gotoIfError(clean, GraphicsDeviceRef_submitCommands(device, commandLists, swapchains));
+		_gotoIfError(clean, GraphicsDeviceRef_submitCommands(device, commandLists, swapchains, Buffer_createNull()));
 	}
 
 	//We need to signal that we're done if we're a virtual window

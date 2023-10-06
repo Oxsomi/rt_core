@@ -2,5 +2,12 @@
 
 [numthreads(16, 16, 1)]
 void main(I32x2 i : _globalId) {
-    rwTexture2DUniform(0)[i] = F32x4((i.x & 3) / 4.0, (i.y & 3) / 4.0, 0, 1);
+
+	//Assume swapchain texture to be present and unorm for now.
+
+	if(_swapchainCount == 0)
+		return;
+
+	uint resourceId = getAppData1u(0) & ResourceId_mask;
+    rwTexture2DUniform(resourceId)[i] = F32x4((i.x & 15) / 15.0, (i.y & 15) / 15.0, 0, 1);
 }
