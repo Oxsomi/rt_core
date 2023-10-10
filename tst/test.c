@@ -327,6 +327,7 @@ GraphicsDeviceRef *device = NULL;
 SwapchainRef *swapchain = NULL;
 CommandListRef *commandList = NULL;
 List computeShaders;
+List graphicsShaders;
 
 void onDraw(Window *w) {
 
@@ -466,6 +467,25 @@ void onResize(Window *w) {
 
 	_gotoIfError(clean, CommandListRef_begin(commandList, true));
 
+	//Test render pipeline
+
+	AttachmentInfo attachmentInfo = (AttachmentInfo) {
+		.image = swapchain,
+		.load = ELoadAttachmentType_Clear,
+		.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
+	};
+
+	List colors = (List) { 0 };
+	_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
+
+	_gotoIfError(clean, CommandListRef_setPipeline(commandList, ((PipelineRef**)graphicsShaders.ptr)[0]));
+	_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
+	_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
+	_gotoIfError(clean, CommandListRef_draw(commandList, (Draw) { .count = 3, .instanceCount = 1 }));
+	_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
+
+	//Test compute pipeline
+
 	Transition transitions[] = {
 		(Transition) {
 			.resource = swapchain,
@@ -477,30 +497,15 @@ void onResize(Window *w) {
 
 	List transitionArr = (List) { 0 };
 	_gotoIfError(clean, List_createConstRef((const U8*) transitions, 1, sizeof(Transition), &transitionArr));
-
+	
 	Swapchain *swapchainPtr = SwapchainRef_ptr(swapchain);
-
+	
 	U32 tilesX = (U32)(I32x2_x(swapchainPtr->size) + 15) >> 4;
 	U32 tilesY = (U32)(I32x2_y(swapchainPtr->size) + 15) >> 4;
 
 	_gotoIfError(clean, CommandListRef_transition(commandList, transitionArr));
 	_gotoIfError(clean, CommandListRef_setPipeline(commandList, ((PipelineRef**)computeShaders.ptr)[0]));
 	_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
-
-	/*
-	AttachmentInfo attachmentInfo = (AttachmentInfo) {
-		.image = swapchain,
-		.load = ELoadAttachmentType_Clear,
-		.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
-	};
-
-	List colors = (List) { 0 };
-	_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
-
-	_gotoIfError(clean, CommandListRef_setPipeline(commandList, graphicsPipeline));
-	_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
-	_gotoIfError(clean, CommandListRef_draw(commandList, (Draw) { .count = 3, .instanceCount = 1 }));
-	_gotoIfError(clean, CommandListRef_endRenderExt(commandList));*/
 
 	_gotoIfError(clean, CommandListRef_end(commandList));
 
@@ -556,7 +561,7 @@ int Program_run() {
 	Error err = Error_none();
 	Window *wind = NULL;
 	Buffer bufThreads = Buffer_createNull();
-	Buffer tempShader = Buffer_createNull();
+	Buffer tempShaders[2] = { 0 };
 	U64 threadId = 0;
 
 	//Graphics test
@@ -587,19 +592,65 @@ int Program_run() {
 	_gotoIfError(clean, GraphicsDeviceRef_create(instance, &deviceInfo, isVerbose, &device));
 
 	computeShaders = (List) { 0 };
+	graphicsShaders = (List) { 0 };
 
 	//Create pipelines
 
 	CharString shaders = CharString_createConstRefCStr("//rt_core/shaders");
 	_gotoIfError(clean, File_loadVirtual(shaders, NULL));
 
-	CharString testPath = CharString_createConstRefCStr("//rt_core/shaders/compute_test");
-	_gotoIfError(clean, File_read(testPath, U64_MAX, &tempShader));
-	List computeBinaries = (List) { 0 };
-	_gotoIfError(clean, List_createConstRef((const U8*) &tempShader, 1, sizeof(Buffer), &computeBinaries));
-	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, &computeBinaries, &computeShaders));
+	//Compute pipelines
 
-	tempShader = Buffer_createNull();
+	CharString path = CharString_createConstRefCStr("//rt_core/shaders/compute_test.main");
+	_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
+	List binaries = (List) { 0 };
+	_gotoIfError(clean, List_createConstRef((const U8*) &tempShaders[0], 1, sizeof(Buffer), &binaries));
+	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, &binaries, &computeShaders));
+
+	tempShaders[0] = Buffer_createNull();
+
+	//Graphics pipelines
+
+	path = CharString_createConstRefCStr("//rt_core/shaders/graphics_test.mainVS");
+	_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
+
+	path = CharString_createConstRefCStr("//rt_core/shaders/graphics_test.mainPS");
+	_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
+
+	PipelineStage stageArr[2] = {
+		(PipelineStage) {
+			.stageType = EPipelineStage_Vertex,
+			.shaderBinary = tempShaders[0]
+		},
+		(PipelineStage) {
+			.stageType = EPipelineStage_Pixel,
+			.shaderBinary = tempShaders[1]
+		}
+	};
+
+	List stages = (List) { 0 };
+	_gotoIfError(clean, List_createConstRef(
+		(const U8*) stageArr, sizeof(stageArr) / sizeof(stageArr[0]), sizeof(stageArr[0]), &stages
+	));
+
+	PipelineGraphicsInfo info[1] = {
+		(PipelineGraphicsInfo) {
+			.stageCount = 2,
+			.blendState = (BlendState) { .renderTargetsCount = 1, .attachments = { { .writeMask = EWriteMask_all } } },
+			.attachmentCountExt = 1,
+			.attachmentFormatsExt = { ETextureFormat_bgra8 }
+		}
+	};
+
+	List infos = (List) { 0 };
+	_gotoIfError(clean, List_createConstRef(
+		(const U8*) info, sizeof(info) / sizeof(info[0]), sizeof(info[0]), &infos
+	));
+
+	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesGraphics(device, &stages, &infos, &graphicsShaders));
+
+	tempShaders[0] = Buffer_createNull();
+	tempShaders[1] = Buffer_createNull();
 
 	//Setup threads
 
@@ -637,7 +688,7 @@ int Program_run() {
 		EWindowHint_AllowFullscreen, 
 		CharString_createConstRefCStr("Rt core test"),
 		callbacks,
-		EWindowFormat_rgba8,
+		EWindowFormat_bgra8,
 		&wind
 	));
 
@@ -676,7 +727,10 @@ clean:
 
 	WindowManager_unlock(&Platform_instance.windowManager);
 
-	Buffer_freex(&tempShader);
+	for(U64 i = 0; i < sizeof(tempShaders) / sizeof(tempShaders[0]); ++i)
+		Buffer_freex(&tempShaders[i]);
+
+	PipelineRef_decAll(&graphicsShaders);
 	PipelineRef_decAll(&computeShaders);
 	GraphicsDeviceRef_wait(device);
 	CommandListRef_dec(&commandList);
