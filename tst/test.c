@@ -21,6 +21,7 @@
 #include "math/camera.h"
 #include "types/buffer.h"
 #include "types/time.h"
+#include "types/flp.h"
 #include "formats/bmp.h"
 #include "platforms/keyboard.h"
 #include "platforms/platform.h"
@@ -36,6 +37,7 @@
 #include "graphics/generic/swapchain.h"
 #include "graphics/generic/command_list.h"
 #include "graphics/generic/pipeline.h"
+#include "graphics/generic/buffer.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -77,6 +79,7 @@ GraphicsInstanceRef *instance = NULL;
 GraphicsDeviceRef *device = NULL;
 SwapchainRef *swapchain = NULL;
 CommandListRef *commandList = NULL;
+GPUBufferRef *vertexBuffer = NULL;
 
 List computeShaders;
 List graphicsShaders;
@@ -126,9 +129,12 @@ void onResize(Window *w) {
 		List colors = (List) { 0 };
 		_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
 
+		PrimitiveBuffers primitiveBuffers = (PrimitiveBuffers) { .vertexBuffers = { vertexBuffer } };
+
 		_gotoIfError(clean, CommandListRef_setPipeline(commandList, ((PipelineRef**)graphicsShaders.ptr)[0]));
 		_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
 		_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
+		_gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers));
 		_gotoIfError(clean, CommandListRef_draw(commandList, (Draw) { .count = 3, .instanceCount = 1 }));
 		_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
 
@@ -259,9 +265,26 @@ int Program_run() {
 		(const U8*) stageArr, sizeof(stageArr) / sizeof(stageArr[0]), sizeof(stageArr[0]), &stages
 	));
 
+	typedef struct Vertex {
+
+		F16 pos[2];
+		//F16 uv[2];
+
+	} Vertex;
+
 	PipelineGraphicsInfo info[1] = {
 		(PipelineGraphicsInfo) {
 			.stageCount = 2,
+			.vertexLayout = {
+				.bufferStrides12_isInstance1 = { (U16) sizeof(Vertex) },
+				.attributes = {
+					(VertexAttribute) {
+						.offset11 = 0,
+						.bufferId4 = 0,
+						.format = ETextureFormatId_RG16f,
+					}
+				}
+			},
 			.attachmentCountExt = 1,
 			.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 }
 		}
@@ -272,6 +295,17 @@ int Program_run() {
 	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesGraphics(device, &stages, &infos, &graphicsShaders));
 
 	tempShaders[0] = tempShaders[1] = Buffer_createNull();
+
+	//Mesh data
+
+	Vertex vertData[] = {
+		(Vertex) { { F32_castF16(-1), F32_castF16(-1) } },
+		(Vertex) { { F32_castF16(1), F32_castF16(-1) } },
+		(Vertex) { { F32_castF16(1), F32_castF16(1) } }
+	};
+
+	Buffer vertexData = Buffer_createConstRef(vertData, sizeof(vertData));
+	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(device, EGPUBufferUsage_Vertex, &vertexData, &vertexBuffer));
 
 	//Setup buffer / window
 
@@ -317,6 +351,7 @@ clean:
 	for(U64 i = 0; i < sizeof(tempShaders) / sizeof(tempShaders[0]); ++i)
 		Buffer_freex(&tempShaders[i]);
 
+	GPUBufferRef_dec(&vertexBuffer);
 	PipelineRef_decAll(&graphicsShaders);
 	PipelineRef_decAll(&computeShaders);
 	GraphicsDeviceRef_wait(device);
