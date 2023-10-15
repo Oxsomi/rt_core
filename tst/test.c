@@ -79,7 +79,8 @@ GraphicsInstanceRef *instance = NULL;
 GraphicsDeviceRef *device = NULL;
 SwapchainRef *swapchain = NULL;
 CommandListRef *commandList = NULL;
-GPUBufferRef *vertexBuffer = NULL;
+GPUBufferRef *vertexBuffers[2] = { 0 };
+GPUBufferRef *indexBuffer = NULL;
 
 List computeShaders;
 List graphicsShaders;
@@ -129,13 +130,16 @@ void onResize(Window *w) {
 		List colors = (List) { 0 };
 		_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
 
-		PrimitiveBuffers primitiveBuffers = (PrimitiveBuffers) { .vertexBuffers = { vertexBuffer } };
+		PrimitiveBuffers primitiveBuffers = (PrimitiveBuffers) { 
+			.vertexBuffers = { vertexBuffers[0], vertexBuffers[1] },
+			.indexBuffer = indexBuffer
+		};
 
 		_gotoIfError(clean, CommandListRef_setPipeline(commandList, ((PipelineRef**)graphicsShaders.ptr)[0]));
 		_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
 		_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
 		_gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers));
-		_gotoIfError(clean, CommandListRef_draw(commandList, (Draw) { .count = 3, .instanceCount = 1 }));
+		_gotoIfError(clean, CommandListRef_drawIndexed(commandList, 6, 1));
 		_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
 
 		//Test compute pipeline
@@ -265,22 +269,32 @@ int Program_run() {
 		(const U8*) stageArr, sizeof(stageArr) / sizeof(stageArr[0]), sizeof(stageArr[0]), &stages
 	));
 
-	typedef struct Vertex {
+	typedef struct VertexPosBuffer {
 
 		F16 pos[2];
-		//F16 uv[2];
 
-	} Vertex;
+	} VertexPosBuffer;
+
+	typedef struct VertexDataBuffer {
+
+		F16 uv[2];
+
+	} VertexDataBuffer;
 
 	PipelineGraphicsInfo info[1] = {
 		(PipelineGraphicsInfo) {
 			.stageCount = 2,
 			.vertexLayout = {
-				.bufferStrides12_isInstance1 = { (U16) sizeof(Vertex) },
+				.bufferStrides12_isInstance1 = { (U16) sizeof(VertexPosBuffer), (U16) sizeof(VertexDataBuffer) },
 				.attributes = {
 					(VertexAttribute) {
 						.offset11 = 0,
 						.bufferId4 = 0,
+						.format = ETextureFormatId_RG16f,
+					},
+					(VertexAttribute) {
+						.offset11 = 0,
+						.bufferId4 = 1,
 						.format = ETextureFormatId_RG16f,
 					}
 				}
@@ -298,14 +312,33 @@ int Program_run() {
 
 	//Mesh data
 
-	Vertex vertData[] = {
-		(Vertex) { { F32_castF16(-1), F32_castF16(-1) } },
-		(Vertex) { { F32_castF16(1), F32_castF16(-1) } },
-		(Vertex) { { F32_castF16(1), F32_castF16(1) } }
+	VertexPosBuffer vertexPos[] = {
+		(VertexPosBuffer) { { F32_castF16(-0.5f), F32_castF16(-0.5f) } },
+		(VertexPosBuffer) { { F32_castF16(0.5f), F32_castF16(-0.5f) } },
+		(VertexPosBuffer) { { F32_castF16(0.5f), F32_castF16(0.5f) } },
+		(VertexPosBuffer) { { F32_castF16(-0.5f), F32_castF16(0.5f) } }
 	};
 
-	Buffer vertexData = Buffer_createConstRef(vertData, sizeof(vertData));
-	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(device, EGPUBufferUsage_Vertex, &vertexData, &vertexBuffer));
+	VertexDataBuffer vertDat[] = {
+		(VertexDataBuffer) { { F32_castF16(0), F32_castF16(0) } },
+		(VertexDataBuffer) { { F32_castF16(1), F32_castF16(0) } },
+		(VertexDataBuffer) { { F32_castF16(1), F32_castF16(1) } },
+		(VertexDataBuffer) { { F32_castF16(0), F32_castF16(1) } }
+	};
+
+	Buffer vertexData = Buffer_createConstRef(vertexPos, sizeof(vertexPos));
+	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(device, EGPUBufferUsage_Vertex, &vertexData, &vertexBuffers[0]));
+
+	vertexData = Buffer_createConstRef(vertDat, sizeof(vertDat));
+	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(device, EGPUBufferUsage_Vertex, &vertexData, &vertexBuffers[1]));
+
+	U16 indexDat[] = {
+		0, 1, 2,
+		2, 3, 0
+	};
+
+	Buffer indexData = Buffer_createConstRef(indexDat, sizeof(indexDat));
+	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(device, EGPUBufferUsage_Index, &indexData, &indexBuffer));
 
 	//Setup buffer / window
 
@@ -351,7 +384,9 @@ clean:
 	for(U64 i = 0; i < sizeof(tempShaders) / sizeof(tempShaders[0]); ++i)
 		Buffer_freex(&tempShaders[i]);
 
-	GPUBufferRef_dec(&vertexBuffer);
+	GPUBufferRef_dec(&vertexBuffers[0]);
+	GPUBufferRef_dec(&vertexBuffers[1]);
+	GPUBufferRef_dec(&indexBuffer);
 	PipelineRef_decAll(&graphicsShaders);
 	PipelineRef_decAll(&computeShaders);
 	GraphicsDeviceRef_wait(device);
