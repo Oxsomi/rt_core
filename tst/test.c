@@ -327,10 +327,16 @@ int Program_run() {
 	};
 
 	Buffer vertexData = Buffer_createConstRef(vertexPos, sizeof(vertexPos));
-	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(device, EGPUBufferUsage_Vertex, &vertexData, &vertexBuffers[0]));
+	CharString name = CharString_createConstRefCStr("Vertex position buffer");
+	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+		device, EGPUBufferUsage_Vertex, name, &vertexData, &vertexBuffers[0]
+	));
 
 	vertexData = Buffer_createConstRef(vertDat, sizeof(vertDat));
-	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(device, EGPUBufferUsage_Vertex, &vertexData, &vertexBuffers[1]));
+	name = CharString_createConstRefCStr("Vertex attribute buffer");
+	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+		device, EGPUBufferUsage_Vertex, name, &vertexData, &vertexBuffers[1]
+	));
 
 	U16 indexDat[] = {
 		0, 1, 2,
@@ -338,7 +344,10 @@ int Program_run() {
 	};
 
 	Buffer indexData = Buffer_createConstRef(indexDat, sizeof(indexDat));
-	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(device, EGPUBufferUsage_Index, &indexData, &indexBuffer));
+	name = CharString_createConstRefCStr("Index buffer");
+	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+		device, EGPUBufferUsage_Index, name, &indexData, &indexBuffer
+	));
 
 	//Setup buffer / window
 
