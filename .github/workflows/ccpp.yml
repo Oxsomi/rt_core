@@ -19,6 +19,6 @@ jobs:
           echo Downloaded
           .\VulkanSDK.exe --root C:\VulkanSDK  --accept-licenses --default-answer --confirm-command install
     - name: build for release check
-      run: D:\a\rt_core\core3\build.bat Release On Off
+      run: D:\a\rt_core\rt_core\core3\build.bat Release On Off
     - name: build for debug check
-      run: D:\a\rt_core\core3\build.bat Debug On Off
+      run: D:\a\rt_core\rt_core\core3\build.bat Debug On Off
