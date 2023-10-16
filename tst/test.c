@@ -194,6 +194,18 @@ void onDestroy(Window *w) {
 		SwapchainRef_dec(&swapchain);
 }
 
+typedef struct VertexPosBuffer {
+
+	F16 pos[2];
+
+} VertexPosBuffer;
+
+typedef struct VertexDataBuffer {
+
+	F16 uv[2];
+
+} VertexDataBuffer;
+
 int Program_run() {
 
 	Error err = Error_none();
@@ -237,78 +249,94 @@ int Program_run() {
 
 	//Compute pipelines
 
-	CharString path = CharString_createConstRefCStr("//rt_core/shaders/compute_test.main");
-	_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
-	List binaries = (List) { 0 };
-	_gotoIfError(clean, List_createConstRef((const U8*) &tempShaders[0], 1, sizeof(Buffer), &binaries));
-	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, &binaries, &computeShaders));
+	{
 
-	tempShaders[0] = Buffer_createNull();
+		CharString path = CharString_createConstRefCStr("//rt_core/shaders/compute_test.main");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
+
+		CharString nameArr[] = {
+			CharString_createConstRefCStr("Test compute pipeline")
+		};
+
+		List binaries = (List) { 0 }, names = (List) { 0 };
+
+		_gotoIfError(clean, List_createConstRef((const U8*) &tempShaders[0], 1, sizeof(Buffer), &binaries));
+
+		_gotoIfError(clean, List_createConstRef(
+			(const U8*) &nameArr, sizeof(nameArr) / sizeof(nameArr[0]), sizeof(nameArr[0]), &names)
+		);
+
+		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, &binaries, names, &computeShaders));
+
+		tempShaders[0] = Buffer_createNull();
+	}
 
 	//Graphics pipelines
 
-	path = CharString_createConstRefCStr("//rt_core/shaders/graphics_test.mainVS");
-	_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
+	{
+		CharString path = CharString_createConstRefCStr("//rt_core/shaders/graphics_test.mainVS");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
 
-	path = CharString_createConstRefCStr("//rt_core/shaders/graphics_test.mainPS");
-	_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
+		path = CharString_createConstRefCStr("//rt_core/shaders/graphics_test.mainPS");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
 
-	PipelineStage stageArr[2] = {
-		(PipelineStage) {
-			.stageType = EPipelineStage_Vertex,
-			.shaderBinary = tempShaders[0]
-		},
-		(PipelineStage) {
-			.stageType = EPipelineStage_Pixel,
-			.shaderBinary = tempShaders[1]
-		}
-	};
-
-	List stages = (List) { 0 };
-	_gotoIfError(clean, List_createConstRef(
-		(const U8*) stageArr, sizeof(stageArr) / sizeof(stageArr[0]), sizeof(stageArr[0]), &stages
-	));
-
-	typedef struct VertexPosBuffer {
-
-		F16 pos[2];
-
-	} VertexPosBuffer;
-
-	typedef struct VertexDataBuffer {
-
-		F16 uv[2];
-
-	} VertexDataBuffer;
-
-	PipelineGraphicsInfo info[1] = {
-		(PipelineGraphicsInfo) {
-			.stageCount = 2,
-			.vertexLayout = {
-				.bufferStrides12_isInstance1 = { (U16) sizeof(VertexPosBuffer), (U16) sizeof(VertexDataBuffer) },
-				.attributes = {
-					(VertexAttribute) {
-						.offset11 = 0,
-						.bufferId4 = 0,
-						.format = ETextureFormatId_RG16f,
-					},
-					(VertexAttribute) {
-						.offset11 = 0,
-						.bufferId4 = 1,
-						.format = ETextureFormatId_RG16f,
-					}
-				}
+		PipelineStage stageArr[2] = {
+			(PipelineStage) {
+				.stageType = EPipelineStage_Vertex,
+				.shaderBinary = tempShaders[0]
 			},
-			.attachmentCountExt = 1,
-			.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 }
-		}
-	};
+			(PipelineStage) {
+				.stageType = EPipelineStage_Pixel,
+				.shaderBinary = tempShaders[1]
+			}
+		};
 
-	List infos = (List) { 0 };
-	_gotoIfError(clean, List_createConstRef((const U8*) info, sizeof(info) / sizeof(info[0]), sizeof(info[0]), &infos));
-	_gotoIfError(clean, GraphicsDeviceRef_createPipelinesGraphics(device, &stages, &infos, &graphicsShaders));
+		List stages = (List) { 0 };
+		_gotoIfError(clean, List_createConstRef(
+			(const U8*) stageArr, sizeof(stageArr) / sizeof(stageArr[0]), sizeof(stageArr[0]), &stages
+		));
+	
+		PipelineGraphicsInfo infoArr[1] = {
+			(PipelineGraphicsInfo) {
+				.stageCount = 2,
+				.vertexLayout = {
+					.bufferStrides12_isInstance1 = { (U16) sizeof(VertexPosBuffer), (U16) sizeof(VertexDataBuffer) },
+					.attributes = {
+						(VertexAttribute) {
+							.offset11 = 0,
+							.bufferId4 = 0,
+							.format = ETextureFormatId_RG16f,
+						},
+						(VertexAttribute) {
+							.offset11 = 0,
+							.bufferId4 = 1,
+							.format = ETextureFormatId_RG16f,
+						}
+					}
+				},
+				.attachmentCountExt = 1,
+				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 }
+			}
+		};
 
-	tempShaders[0] = tempShaders[1] = Buffer_createNull();
+		CharString nameArr[] = {
+			CharString_createConstRefCStr("Test graphics pipeline")
+		};
+
+		List infos = (List) { 0 }, names = (List) { 0 };
+
+		_gotoIfError(clean, List_createConstRef(
+			(const U8*) infoArr, sizeof(infoArr) / sizeof(infoArr[0]), sizeof(infoArr[0]), &infos
+		));
+
+		_gotoIfError(clean, List_createConstRef(
+			(const U8*) &nameArr, sizeof(nameArr) / sizeof(nameArr[0]), sizeof(nameArr[0]), &names)
+		);
+
+		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesGraphics(device, &stages, &infos, names, &graphicsShaders));
+
+		tempShaders[0] = tempShaders[1] = Buffer_createNull();
+	}
 
 	//Mesh data
 

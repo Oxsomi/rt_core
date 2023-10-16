@@ -20,5 +20,7 @@ jobs:
           .\VulkanSDK.exe --root C:\VulkanSDK  --accept-licenses --default-answer --confirm-command install
     - name: cmake build
       run: cmake . -G "Visual Studio 17 2022"
-    - name: build
-      run: cmake --build . -j 8
+    - name: build for release check
+      run: D:\a\rt_core\core3\build.bat Release On Off
+    - name: build for debug check
+      run: D:\a\rt_core\core3\build.bat Debug On Off
