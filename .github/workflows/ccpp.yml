@@ -18,8 +18,6 @@ jobs:
           Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$ver/windows/VulkanSDK-$ver-Installer.exe" -OutFile VulkanSDK.exe
           echo Downloaded
           .\VulkanSDK.exe --root C:\VulkanSDK  --accept-licenses --default-answer --confirm-command install
-    - name: cmake build
-      run: cmake . -G "Visual Studio 17 2022"
     - name: build for release check
       run: D:\a\rt_core\core3\build.bat Release On Off
     - name: build for debug check
