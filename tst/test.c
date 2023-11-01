@@ -37,7 +37,7 @@
 #include "graphics/generic/swapchain.h"
 #include "graphics/generic/command_list.h"
 #include "graphics/generic/pipeline.h"
-#include "graphics/generic/buffer.h"
+#include "graphics/generic/device_buffer.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -79,8 +79,8 @@ GraphicsInstanceRef *instance = NULL;
 GraphicsDeviceRef *device = NULL;
 SwapchainRef *swapchain = NULL;
 CommandListRef *commandList = NULL;
-GPUBufferRef *vertexBuffers[2] = { 0 };
-GPUBufferRef *indexBuffer = NULL;
+DeviceBufferRef *vertexBuffers[2] = { 0 };
+DeviceBufferRef *indexBuffer = NULL;
 
 List computeShaders;
 List graphicsShaders;
@@ -357,13 +357,13 @@ int Program_run() {
 	Buffer vertexData = Buffer_createConstRef(vertexPos, sizeof(vertexPos));
 	CharString name = CharString_createConstRefCStr("Vertex position buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		device, EGPUBufferUsage_Vertex, name, &vertexData, &vertexBuffers[0]
+		device, EDeviceBufferUsage_Vertex, name, &vertexData, &vertexBuffers[0]
 	));
 
 	vertexData = Buffer_createConstRef(vertDat, sizeof(vertDat));
 	name = CharString_createConstRefCStr("Vertex attribute buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		device, EGPUBufferUsage_Vertex, name, &vertexData, &vertexBuffers[1]
+		device, EDeviceBufferUsage_Vertex, name, &vertexData, &vertexBuffers[1]
 	));
 
 	U16 indexDat[] = {
@@ -374,7 +374,7 @@ int Program_run() {
 	Buffer indexData = Buffer_createConstRef(indexDat, sizeof(indexDat));
 	name = CharString_createConstRefCStr("Index buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		device, EGPUBufferUsage_Index, name, &indexData, &indexBuffer
+		device, EDeviceBufferUsage_Index, name, &indexData, &indexBuffer
 	));
 
 	//Setup buffer / window
@@ -421,9 +421,9 @@ clean:
 	for(U64 i = 0; i < sizeof(tempShaders) / sizeof(tempShaders[0]); ++i)
 		Buffer_freex(&tempShaders[i]);
 
-	GPUBufferRef_dec(&vertexBuffers[0]);
-	GPUBufferRef_dec(&vertexBuffers[1]);
-	GPUBufferRef_dec(&indexBuffer);
+	DeviceBufferRef_dec(&vertexBuffers[0]);
+	DeviceBufferRef_dec(&vertexBuffers[1]);
+	DeviceBufferRef_dec(&indexBuffer);
 	PipelineRef_decAll(&graphicsShaders);
 	PipelineRef_decAll(&computeShaders);
 	GraphicsDeviceRef_wait(device);
