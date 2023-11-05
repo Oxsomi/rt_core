@@ -66,7 +66,7 @@ void onUpdate(Window *w, F64 dt) {
 
 	if(F64_floor(prevTime) != F64_floor(time)) {
 
-		Log_debugLn("%u fps", (U32)F64_round(framesSinceLastSecond / timeSinceLastSecond));
+		Log_debugLnx("%u fps", (U32)F64_round(framesSinceLastSecond / timeSinceLastSecond));
 
 		framesSinceLastSecond = 0;
 		timeSinceLastSecond = 0;
@@ -217,13 +217,13 @@ void onCreate(Window *w) {
 
 	if(!(w->flags & EWindowFlags_IsVirtual)) {
 
-		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w };
+		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w, .usage = ESwapchainUsage_AllowCompute };
 
 		Error err = GraphicsDeviceRef_createSwapchain(device, swapchainInfo, &swapchain);
 		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 
 		if (!err.genericError && !commandList) {
-			err = GraphicsDeviceRef_createCommandList(device, 4 * KIBI, 128, KIBI, true, &commandList);
+			err = GraphicsDeviceRef_createCommandList(device, 2 * KIBI, 64, 64, true, &commandList);
 			Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 		}
 	}
