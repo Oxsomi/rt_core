@@ -81,6 +81,7 @@ SwapchainRef *swapchain = NULL;
 CommandListRef *commandList = NULL;
 DeviceBufferRef *vertexBuffers[2] = { 0 };
 DeviceBufferRef *indexBuffer = NULL;
+DeviceBufferRef *deviceBuffer = NULL;			//Constant F32x3
 
 List computeShaders;
 List graphicsShaders;
@@ -99,7 +100,18 @@ void onDraw(Window *w) {
 	_gotoIfError(clean, List_createConstRef((const U8*) &commandList, 1, sizeof(commandList), &commandLists));
 	_gotoIfError(clean, List_createConstRef((const U8*) &swapchain, 1, sizeof(swapchain), &swapchains));
 
-	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(device, commandLists, swapchains, Buffer_createNull()));
+	DeviceBuffer *deviceBuf = DeviceBufferRef_ptr(deviceBuffer);
+
+	if(
+		(deviceBuf->readHandle << 12 >> 12) !=				//This is fine for now, but won't work later down the line.
+		(deviceBuf->writeHandle << 12 >> 12)
+	)
+		_gotoIfError(clean, Error_invalidOperation(0));
+
+	U32 bufferId = deviceBuf->readHandle << 12 >> 12;
+	Buffer runtimeData = Buffer_createConstRef(&bufferId, sizeof(bufferId));
+
+	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(device, commandLists, swapchains, runtimeData));
 
 clean:
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
@@ -135,6 +147,24 @@ void onResize(Window *w) {
 			.indexBuffer = indexBuffer
 		};
 
+		Transition graphicsTransitions[] = {
+			(Transition) {
+				.resource = deviceBuffer,
+				.range = { .buffer = (BufferRange) { 0 } },
+				.stage = EPipelineStage_Pixel,
+				.isWrite = false
+			}
+		};
+
+		List transitionArr = (List) { 0 };
+		_gotoIfError(clean, List_createConstRef(
+			(const U8*) graphicsTransitions, 
+			sizeof(graphicsTransitions) / sizeof(graphicsTransitions[0]), 
+			sizeof(Transition), 
+			&transitionArr
+		));
+
+		_gotoIfError(clean, CommandListRef_transition(commandList, transitionArr));
 		_gotoIfError(clean, CommandListRef_setPipeline(commandList, ((PipelineRef**)graphicsShaders.ptr)[0]));
 		_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
 		_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
@@ -144,17 +174,28 @@ void onResize(Window *w) {
 
 		//Test compute pipeline
 
-		Transition transitions[] = {
+		Transition computeTransitions[] = {
 			(Transition) {
 				.resource = swapchain,
-				.range = (ImageRange) { 0 },
+				.range = { .image = (ImageRange) { 0 } },
+				.stage = EPipelineStage_Compute,
+				.isWrite = true
+			},
+			(Transition) {
+				.resource = deviceBuffer,
+				.range = { .buffer = (BufferRange) { 0 } },
 				.stage = EPipelineStage_Compute,
 				.isWrite = true
 			}
 		};
 
-		List transitionArr = (List) { 0 };
-		_gotoIfError(clean, List_createConstRef((const U8*) transitions, 1, sizeof(Transition), &transitionArr));
+		transitionArr = (List) { 0 };
+		_gotoIfError(clean, List_createConstRef(
+			(const U8*) computeTransitions, 
+			sizeof(computeTransitions) / sizeof(computeTransitions[0]), 
+			sizeof(Transition), 
+			&transitionArr
+		));
 	
 		Swapchain *swapchainPtr = SwapchainRef_ptr(swapchain);
 	
@@ -377,6 +418,11 @@ int Program_run() {
 		device, EDeviceBufferUsage_Index, name, &indexData, &indexBuffer
 	));
 
+	name = CharString_createConstRefCStr("Test shader buffer");
+	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
+		device, EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4), &deviceBuffer
+	));
+
 	//Setup buffer / window
 
 	WindowManager_lock(&Platform_instance.windowManager, U64_MAX);
@@ -424,10 +470,11 @@ clean:
 	DeviceBufferRef_dec(&vertexBuffers[0]);
 	DeviceBufferRef_dec(&vertexBuffers[1]);
 	DeviceBufferRef_dec(&indexBuffer);
+	DeviceBufferRef_dec(&deviceBuffer);
 	PipelineRef_decAll(&graphicsShaders);
 	PipelineRef_decAll(&computeShaders);
-	GraphicsDeviceRef_wait(device);
 	CommandListRef_dec(&commandList);
+	GraphicsDeviceRef_wait(device);
 	GraphicsDeviceRef_dec(&device);
 	GraphicsInstanceRef_dec(&instance);
 
