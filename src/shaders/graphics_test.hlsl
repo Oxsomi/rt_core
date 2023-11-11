@@ -1,4 +1,4 @@
-#include "resources.hlsl"
+#include "resource_bindings.hlsl"
 
 //Generate black triangle
 
@@ -16,7 +16,7 @@ VSOutput mainVS(F32x2 pos : _bind(0), F32x2 uv : _bind(1)) {
 
 F32x4 mainPS(F32x2 uv : _bind(0)): SV_TARGET {
 
-	U32 resourceId = getAppData1u(_swapchainCount);
+	U32 resourceId = getAppData1u(_swapchainCount + EResourceBinding_ConstantColorBuffer);
 	F32x3 col = getAtUniform<F32x3>(resourceId, 0);		//Randomly output from compute shader (0 at init)
 
 	return F32x4(F32x3(0, uv) + col, 1);

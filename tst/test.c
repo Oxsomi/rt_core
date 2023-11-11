@@ -82,6 +82,7 @@ CommandListRef *commandList = NULL;
 DeviceBufferRef *vertexBuffers[2] = { 0 };
 DeviceBufferRef *indexBuffer = NULL;
 DeviceBufferRef *deviceBuffer = NULL;			//Constant F32x3
+DeviceBufferRef *indirectBuffer = NULL;			//sizeof(IndirectDrawIndexed) * 2
 
 List computeShaders;
 List graphicsShaders;
@@ -102,14 +103,17 @@ void onDraw(Window *w) {
 
 	DeviceBuffer *deviceBuf = DeviceBufferRef_ptr(deviceBuffer);
 
-	if(
-		(deviceBuf->readHandle << 12 >> 12) !=				//This is fine for now, but won't work later down the line.
-		(deviceBuf->writeHandle << 12 >> 12)
-	)
-		_gotoIfError(clean, Error_invalidOperation(0));
+	typedef struct RuntimeData {
+		U32 constantColorRead, constantColorWrite, indirectDrawWrite;
+	} RuntimeData;
 
-	U32 bufferId = deviceBuf->readHandle << 12 >> 12;
-	Buffer runtimeData = Buffer_createConstRef(&bufferId, sizeof(bufferId));
+	RuntimeData data = (RuntimeData) {
+		.constantColorRead = deviceBuf->readHandle,
+		.constantColorWrite = deviceBuf->writeHandle,
+		.indirectDrawWrite = DeviceBufferRef_ptr(indirectBuffer)->writeHandle
+	};
+	
+	Buffer runtimeData = Buffer_createConstRef(&data, sizeof(data));
 
 	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(device, commandLists, swapchains, runtimeData));
 
@@ -120,7 +124,7 @@ clean:
 void onResize(Window *w) {
 
 	Error err = Error_none();
-	Bool hasSwapchain = I32x2_any(I32x2_gt(w->size, I32x2_zero()));
+	Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
 
 	if(hasSwapchain)
 		_gotoIfError(clean, Swapchain_resize(SwapchainRef_ptr(swapchain)));
@@ -131,53 +135,20 @@ void onResize(Window *w) {
 
 	if(hasSwapchain) {
 
-		//Test render pipeline
+		typedef enum EScopes {
 
-		AttachmentInfo attachmentInfo = (AttachmentInfo) {
-			.image = swapchain,
-			.load = ELoadAttachmentType_Clear,
-			.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
-		};
+			EScopes_PrepareIndirect,
+			EScopes_GraphicsTest,
+			EScopes_ComputeTest
 
-		List colors = (List) { 0 };
-		_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
+		} EScopes;
 
-		PrimitiveBuffers primitiveBuffers = (PrimitiveBuffers) { 
-			.vertexBuffers = { vertexBuffers[0], vertexBuffers[1] },
-			.indexBuffer = indexBuffer
-		};
+		//Prepare 2 indirect draw calls and update constant color
 
-		Transition graphicsTransitions[] = {
+		Transition transitions[2] = {
 			(Transition) {
-				.resource = deviceBuffer,
+				.resource = indirectBuffer,
 				.range = { .buffer = (BufferRange) { 0 } },
-				.stage = EPipelineStage_Pixel,
-				.isWrite = false
-			}
-		};
-
-		List transitionArr = (List) { 0 };
-		_gotoIfError(clean, List_createConstRef(
-			(const U8*) graphicsTransitions, 
-			sizeof(graphicsTransitions) / sizeof(graphicsTransitions[0]), 
-			sizeof(Transition), 
-			&transitionArr
-		));
-
-		_gotoIfError(clean, CommandListRef_transition(commandList, transitionArr));
-		_gotoIfError(clean, CommandListRef_setPipeline(commandList, ((PipelineRef**)graphicsShaders.ptr)[0]));
-		_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
-		_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
-		_gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers));
-		_gotoIfError(clean, CommandListRef_drawIndexed(commandList, 6, 1));
-		_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
-
-		//Test compute pipeline
-
-		Transition computeTransitions[] = {
-			(Transition) {
-				.resource = swapchain,
-				.range = { .image = (ImageRange) { 0 } },
 				.stage = EPipelineStage_Compute,
 				.isWrite = true
 			},
@@ -189,22 +160,90 @@ void onResize(Window *w) {
 			}
 		};
 
-		transitionArr = (List) { 0 };
+		List transitionArr = (List) { 0 }, depsArr = (List) { 0 };
 		_gotoIfError(clean, List_createConstRef(
-			(const U8*) computeTransitions, 
-			sizeof(computeTransitions) / sizeof(computeTransitions[0]), 
-			sizeof(Transition), 
-			&transitionArr
+			(const U8*) transitions, sizeof(transitions) / sizeof(Transition), sizeof(Transition), &transitionArr
 		));
-	
-		Swapchain *swapchainPtr = SwapchainRef_ptr(swapchain);
-	
-		U32 tilesX = (U32)(I32x2_x(swapchainPtr->size) + 15) >> 4;
-		U32 tilesY = (U32)(I32x2_y(swapchainPtr->size) + 15) >> 4;
 
-		_gotoIfError(clean, CommandListRef_transition(commandList, transitionArr));
-		_gotoIfError(clean, CommandListRef_setPipeline(commandList, ((PipelineRef**)computeShaders.ptr)[0]));
-		_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[1]));
+			_gotoIfError(clean, CommandListRef_dispatch1D(commandList, 1));
+			_gotoIfError(clean, CommandListRef_endScope(commandList));
+		}
+
+		//Test graphics pipeline
+
+		CommandScopeDependency dep = (CommandScopeDependency) { 
+			.type = ECommandScopeDependencyType_Weak, 
+			.id = EScopes_PrepareIndirect 
+		};
+
+		_gotoIfError(clean, List_createConstRef((const U8*) &dep, 1, sizeof(dep), &depsArr));
+
+		transitions[0] = (Transition) {
+			.resource = deviceBuffer,
+			.range = { .buffer = (BufferRange) { 0 } },
+			.stage = EPipelineStage_Pixel,
+			.isWrite = false
+		};
+
+		transitionArr.length = 1;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
+
+			AttachmentInfo attachmentInfo = (AttachmentInfo) {
+				.image = swapchain,
+				.load = ELoadAttachmentType_Clear,
+				.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
+			};
+
+			List colors = (List) { 0 };
+			_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
+
+			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, ((PipelineRef**)graphicsShaders.ptr)[0]));
+			_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
+			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
+
+			PrimitiveBuffers primitiveBuffers = (PrimitiveBuffers) { 
+				.vertexBuffers = { vertexBuffers[0], vertexBuffers[1] },
+				.indexBuffer = indexBuffer
+			};
+
+			_gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers));
+			_gotoIfError(clean, CommandListRef_drawIndexed(commandList, 6, 1));
+			_gotoIfError(clean, CommandListRef_drawIndirect(commandList, indirectBuffer, 0, 0, 2, true));
+
+			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
+			_gotoIfError(clean, CommandListRef_endScope(commandList));
+		}
+
+		//Test compute pipeline
+
+		transitions[0] = (Transition) {
+			.resource = swapchain,
+			.range = { .image = (ImageRange) { 0 } },
+			.stage = EPipelineStage_Compute,
+			.isWrite = true
+		};
+
+		transitionArr.length = 1;
+
+		dep = (CommandScopeDependency) { 
+			.type = ECommandScopeDependencyType_Unconditional, 
+			.id = EScopes_GraphicsTest 
+		};
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_ComputeTest, depsArr).genericError) {
+
+			Swapchain *swapchainPtr = SwapchainRef_ptr(swapchain);
+
+			U32 tilesX = (U32)(I32x2_x(swapchainPtr->size) + 15) >> 4;
+			U32 tilesY = (U32)(I32x2_y(swapchainPtr->size) + 15) >> 4;
+
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[0]));
+			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
+			_gotoIfError(clean, CommandListRef_endScope(commandList));
+		}
 	}
 
 	_gotoIfError(clean, CommandListRef_end(commandList));
@@ -221,11 +260,6 @@ void onCreate(Window *w) {
 
 		Error err = GraphicsDeviceRef_createSwapchain(device, swapchainInfo, &swapchain);
 		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
-
-		if (!err.genericError && !commandList) {
-			err = GraphicsDeviceRef_createCommandList(device, 2 * KIBI, 64, 64, true, &commandList);
-			Error_printx(err, ELogLevel_Error, ELogOptions_Default);
-		}
 	}
 }
 
@@ -295,13 +329,19 @@ int Program_run() {
 		CharString path = CharString_createConstRefCStr("//rt_core/shaders/compute_test.main");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
 
+		path = CharString_createConstRefCStr("//rt_core/shaders/indirect_prepare.main");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
+
+		//TODO: Load in tempShaders[1]
+
 		CharString nameArr[] = {
-			CharString_createConstRefCStr("Test compute pipeline")
+			CharString_createConstRefCStr("Test compute pipeline"),
+			CharString_createConstRefCStr("Prepare indirect pipeline")
 		};
 
 		List binaries = (List) { 0 }, names = (List) { 0 };
 
-		_gotoIfError(clean, List_createConstRef((const U8*) &tempShaders[0], 1, sizeof(Buffer), &binaries));
+		_gotoIfError(clean, List_createConstRef((const U8*) &tempShaders[0], 2, sizeof(Buffer), &binaries));
 
 		_gotoIfError(clean, List_createConstRef(
 			(const U8*) &nameArr, sizeof(nameArr) / sizeof(nameArr[0]), sizeof(nameArr[0]), &names)
@@ -309,7 +349,7 @@ int Program_run() {
 
 		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, &binaries, names, &computeShaders));
 
-		tempShaders[0] = Buffer_createNull();
+		tempShaders[0] = tempShaders[1] = Buffer_createNull();
 	}
 
 	//Graphics pipelines
@@ -382,17 +422,49 @@ int Program_run() {
 	//Mesh data
 
 	VertexPosBuffer vertexPos[] = {
-		(VertexPosBuffer) { { F32_castF16(-0.5f), F32_castF16(-0.5f) } },
-		(VertexPosBuffer) { { F32_castF16(0.5f), F32_castF16(-0.5f) } },
-		(VertexPosBuffer) { { F32_castF16(0.5f), F32_castF16(0.5f) } },
-		(VertexPosBuffer) { { F32_castF16(-0.5f), F32_castF16(0.5f) } }
+
+		//Test quad in center
+
+		(VertexPosBuffer) { { F32_castF16(-0.5f),	F32_castF16(-0.5f) } },
+		(VertexPosBuffer) { { F32_castF16(0.5f),	F32_castF16(-0.5f) } },
+		(VertexPosBuffer) { { F32_castF16(0.5f),	F32_castF16(0.5f) } },
+		(VertexPosBuffer) { { F32_castF16(-0.5f),	F32_castF16(0.5f) } },
+
+		//Test tri with indirect draw
+
+		(VertexPosBuffer) { { F32_castF16(-1),		F32_castF16(-1) } },
+		(VertexPosBuffer) { { F32_castF16(-0.75f),	F32_castF16(-1) } },
+		(VertexPosBuffer) { { F32_castF16(-0.75f),	F32_castF16(-0.75f) } },
+
+		//Test quad with indirect draw
+
+		(VertexPosBuffer) { { F32_castF16(0.75f),	F32_castF16(0.75f) } },
+		(VertexPosBuffer) { { F32_castF16(1),		F32_castF16(0.75f) } },
+		(VertexPosBuffer) { { F32_castF16(1),		F32_castF16(1) } },
+		(VertexPosBuffer) { { F32_castF16(0.75f),	F32_castF16(1) } },
 	};
 
 	VertexDataBuffer vertDat[] = {
-		(VertexDataBuffer) { { F32_castF16(0), F32_castF16(0) } },
-		(VertexDataBuffer) { { F32_castF16(1), F32_castF16(0) } },
-		(VertexDataBuffer) { { F32_castF16(1), F32_castF16(1) } },
-		(VertexDataBuffer) { { F32_castF16(0), F32_castF16(1) } }
+
+		//Test quad in center
+
+		(VertexDataBuffer) { { F32_castF16(0),		F32_castF16(0) } },
+		(VertexDataBuffer) { { F32_castF16(1),		F32_castF16(0) } },
+		(VertexDataBuffer) { { F32_castF16(1),		F32_castF16(1) } },
+		(VertexDataBuffer) { { F32_castF16(0),		F32_castF16(1) } },
+
+		//Test tri with indirect draw
+
+		(VertexDataBuffer) { { F32_castF16(0),		F32_castF16(0) } },
+		(VertexDataBuffer) { { F32_castF16(1),		F32_castF16(0) } },
+		(VertexDataBuffer) { { F32_castF16(1),		F32_castF16(1) } },
+
+		//Test quad with indirect draw
+
+		(VertexDataBuffer) { { F32_castF16(0),		F32_castF16(0) } },
+		(VertexDataBuffer) { { F32_castF16(1),		F32_castF16(0) } },
+		(VertexDataBuffer) { { F32_castF16(1),		F32_castF16(1) } },
+		(VertexDataBuffer) { { F32_castF16(0),		F32_castF16(1) } }
 	};
 
 	Buffer vertexData = Buffer_createConstRef(vertexPos, sizeof(vertexPos));
@@ -408,8 +480,20 @@ int Program_run() {
 	));
 
 	U16 indexDat[] = {
+
+		//Test quad in center of screen
+
 		0, 1, 2,
-		2, 3, 0
+		2, 3, 0,
+
+		//Test triangle with indirect draw
+
+		4, 5, 6,
+
+		//Test quad with indirect draw
+
+		7, 8, 9,
+		9, 10, 7
 	};
 
 	Buffer indexData = Buffer_createConstRef(indexDat, sizeof(indexDat));
@@ -422,6 +506,17 @@ int Program_run() {
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		device, EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4), &deviceBuffer
 	));
+
+	name = CharString_createConstRefCStr("Test indirect buffer");
+	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
+		device, 
+		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect, 
+		name, 
+		sizeof(DrawCallIndexed) * 2, 
+		&indirectBuffer
+	));
+
+	_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, 2 * KIBI, 64, 64, true, &commandList));
 
 	//Setup buffer / window
 
@@ -471,6 +566,7 @@ clean:
 	DeviceBufferRef_dec(&vertexBuffers[1]);
 	DeviceBufferRef_dec(&indexBuffer);
 	DeviceBufferRef_dec(&deviceBuffer);
+	DeviceBufferRef_dec(&indirectBuffer);
 	PipelineRef_decAll(&graphicsShaders);
 	PipelineRef_decAll(&computeShaders);
 	CommandListRef_dec(&commandList);
