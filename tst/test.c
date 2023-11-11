@@ -81,8 +81,9 @@ SwapchainRef *swapchain = NULL;
 CommandListRef *commandList = NULL;
 DeviceBufferRef *vertexBuffers[2] = { 0 };
 DeviceBufferRef *indexBuffer = NULL;
-DeviceBufferRef *deviceBuffer = NULL;			//Constant F32x3
-DeviceBufferRef *indirectBuffer = NULL;			//sizeof(IndirectDrawIndexed) * 2
+DeviceBufferRef *deviceBuffer = NULL;				//Constant F32x3
+DeviceBufferRef *indirectDrawBuffer = NULL;			//sizeof(DrawCallIndexed) * 2
+DeviceBufferRef *indirectDispatchBuffer = NULL;		//sizeof(Dispatch) * 2
 
 List computeShaders;
 List graphicsShaders;
@@ -104,13 +105,14 @@ void onDraw(Window *w) {
 	DeviceBuffer *deviceBuf = DeviceBufferRef_ptr(deviceBuffer);
 
 	typedef struct RuntimeData {
-		U32 constantColorRead, constantColorWrite, indirectDrawWrite;
+		U32 constantColorRead, constantColorWrite, indirectDrawWrite, indirectDispatchWrite;
 	} RuntimeData;
 
 	RuntimeData data = (RuntimeData) {
 		.constantColorRead = deviceBuf->readHandle,
 		.constantColorWrite = deviceBuf->writeHandle,
-		.indirectDrawWrite = DeviceBufferRef_ptr(indirectBuffer)->writeHandle
+		.indirectDrawWrite = DeviceBufferRef_ptr(indirectDrawBuffer)->writeHandle,
+		.indirectDispatchWrite = DeviceBufferRef_ptr(indirectDispatchBuffer)->writeHandle,
 	};
 	
 	Buffer runtimeData = Buffer_createConstRef(&data, sizeof(data));
@@ -138,6 +140,7 @@ void onResize(Window *w) {
 		typedef enum EScopes {
 
 			EScopes_PrepareIndirect,
+			EScopes_IndirectCalcConstant,
 			EScopes_GraphicsTest,
 			EScopes_ComputeTest
 
@@ -145,15 +148,15 @@ void onResize(Window *w) {
 
 		//Prepare 2 indirect draw calls and update constant color
 
-		Transition transitions[2] = {
+		Transition transitions[3] = {
 			(Transition) {
-				.resource = indirectBuffer,
+				.resource = indirectDrawBuffer,
 				.range = { .buffer = (BufferRange) { 0 } },
 				.stage = EPipelineStage_Compute,
 				.isWrite = true
 			},
 			(Transition) {
-				.resource = deviceBuffer,
+				.resource = indirectDispatchBuffer,
 				.range = { .buffer = (BufferRange) { 0 } },
 				.stage = EPipelineStage_Compute,
 				.isWrite = true
@@ -161,9 +164,7 @@ void onResize(Window *w) {
 		};
 
 		List transitionArr = (List) { 0 }, depsArr = (List) { 0 };
-		_gotoIfError(clean, List_createConstRef(
-			(const U8*) transitions, sizeof(transitions) / sizeof(Transition), sizeof(Transition), &transitionArr
-		));
+		_gotoIfError(clean, List_createConstRef((const U8*) transitions, 2, sizeof(Transition), &transitionArr));
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
 			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[1]));
@@ -171,14 +172,75 @@ void onResize(Window *w) {
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
 
+		//Test indirect compute pipeline
+
+		CommandScopeDependency deps[3] = {
+			(CommandScopeDependency) {
+				.type = ECommandScopeDependencyType_Strong, 
+				.id = EScopes_PrepareIndirect
+			}
+		};
+
+		_gotoIfError(clean, List_createConstRef((const U8*) &deps, 1, sizeof(deps[0]), &depsArr));
+
+		transitions[0] = (Transition) {
+			.resource = deviceBuffer,
+			.range = { .buffer = (BufferRange) { 0 } },
+			.stage = EPipelineStage_Compute,
+			.isWrite = true
+		};
+
+		transitionArr.length = 1;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[2]));
+			_gotoIfError(clean, CommandListRef_dispatchIndirect(commandList, indirectDispatchBuffer, 0));
+			_gotoIfError(clean, CommandListRef_endScope(commandList));
+		}
+
+		//Test compute pipeline
+
+		transitions[0] = (Transition) {
+			.resource = swapchain,
+			.range = { .image = (ImageRange) { 0 } },
+			.stage = EPipelineStage_Compute,
+			.isWrite = true
+		};
+
+		transitionArr.length = 1;
+
+		if (!CommandListRef_startScope(commandList, transitionArr, EScopes_ComputeTest, (List) { 0 }).genericError) {
+
+			Swapchain *swapchainPtr = SwapchainRef_ptr(swapchain);
+
+			U32 tilesX = (U32)(I32x2_x(swapchainPtr->size) + 15) >> 4;
+			U32 tilesY = (U32)(I32x2_y(swapchainPtr->size) + 15) >> 4;
+
+			tilesX; tilesY;
+
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[0]));
+			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
+			_gotoIfError(clean, CommandListRef_endScope(commandList));
+		}
+
 		//Test graphics pipeline
 
-		CommandScopeDependency dep = (CommandScopeDependency) { 
-			.type = ECommandScopeDependencyType_Weak, 
+		deps[0] = (CommandScopeDependency) {
+			.type = ECommandScopeDependencyType_Unconditional, 
+			.id = EScopes_ComputeTest
+		};
+
+		deps[1] = (CommandScopeDependency) { 
+			.type = ECommandScopeDependencyType_Strong, 
 			.id = EScopes_PrepareIndirect 
 		};
 
-		_gotoIfError(clean, List_createConstRef((const U8*) &dep, 1, sizeof(dep), &depsArr));
+		deps[2] = (CommandScopeDependency) { 
+			.type = ECommandScopeDependencyType_Unconditional, 
+			.id = EScopes_IndirectCalcConstant 
+		};
+
+		depsArr.length = 3;
 
 		transitions[0] = (Transition) {
 			.resource = deviceBuffer,
@@ -193,7 +255,7 @@ void onResize(Window *w) {
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
 				.image = swapchain,
-				.load = ELoadAttachmentType_Clear,
+				.load = ELoadAttachmentType_Preserve,
 				.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
 			};
 
@@ -211,37 +273,9 @@ void onResize(Window *w) {
 
 			_gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers));
 			_gotoIfError(clean, CommandListRef_drawIndexed(commandList, 6, 1));
-			_gotoIfError(clean, CommandListRef_drawIndirect(commandList, indirectBuffer, 0, 0, 2, true));
+			_gotoIfError(clean, CommandListRef_drawIndirect(commandList, indirectDrawBuffer, 0, 0, 2, true));
 
 			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
-			_gotoIfError(clean, CommandListRef_endScope(commandList));
-		}
-
-		//Test compute pipeline
-
-		transitions[0] = (Transition) {
-			.resource = swapchain,
-			.range = { .image = (ImageRange) { 0 } },
-			.stage = EPipelineStage_Compute,
-			.isWrite = true
-		};
-
-		transitionArr.length = 1;
-
-		dep = (CommandScopeDependency) { 
-			.type = ECommandScopeDependencyType_Unconditional, 
-			.id = EScopes_GraphicsTest 
-		};
-
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_ComputeTest, depsArr).genericError) {
-
-			Swapchain *swapchainPtr = SwapchainRef_ptr(swapchain);
-
-			U32 tilesX = (U32)(I32x2_x(swapchainPtr->size) + 15) >> 4;
-			U32 tilesY = (U32)(I32x2_y(swapchainPtr->size) + 15) >> 4;
-
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[0]));
-			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
 	}
@@ -285,7 +319,7 @@ int Program_run() {
 
 	Error err = Error_none();
 	Window *wind = NULL;
-	Buffer tempShaders[2] = { 0 };
+	Buffer tempShaders[3] = { 0 };
 
 	//Graphics test
 
@@ -325,31 +359,29 @@ int Program_run() {
 	//Compute pipelines
 
 	{
-
 		CharString path = CharString_createConstRefCStr("//rt_core/shaders/compute_test.main");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
 
 		path = CharString_createConstRefCStr("//rt_core/shaders/indirect_prepare.main");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
 
-		//TODO: Load in tempShaders[1]
+		path = CharString_createConstRefCStr("//rt_core/shaders/indirect_compute.main");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[2]));
 
 		CharString nameArr[] = {
 			CharString_createConstRefCStr("Test compute pipeline"),
-			CharString_createConstRefCStr("Prepare indirect pipeline")
+			CharString_createConstRefCStr("Prepare indirect pipeline"),
+			CharString_createConstRefCStr("Indirect compute dispatch")
 		};
 
 		List binaries = (List) { 0 }, names = (List) { 0 };
 
-		_gotoIfError(clean, List_createConstRef((const U8*) &tempShaders[0], 2, sizeof(Buffer), &binaries));
-
-		_gotoIfError(clean, List_createConstRef(
-			(const U8*) &nameArr, sizeof(nameArr) / sizeof(nameArr[0]), sizeof(nameArr[0]), &names)
-		);
+		_gotoIfError(clean, List_createConstRef((const U8*) &tempShaders[0], 3, sizeof(Buffer), &binaries));
+		_gotoIfError(clean, List_createConstRef((const U8*) &nameArr, 3, sizeof(nameArr[0]), &names));
 
 		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, &binaries, names, &computeShaders));
 
-		tempShaders[0] = tempShaders[1] = Buffer_createNull();
+		tempShaders[0] = tempShaders[1] = tempShaders[2] = Buffer_createNull();
 	}
 
 	//Graphics pipelines
@@ -507,13 +539,22 @@ int Program_run() {
 		device, EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4), &deviceBuffer
 	));
 
-	name = CharString_createConstRefCStr("Test indirect buffer");
+	name = CharString_createConstRefCStr("Test indirect draw buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		device, 
 		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect, 
 		name, 
 		sizeof(DrawCallIndexed) * 2, 
-		&indirectBuffer
+		&indirectDrawBuffer
+	));
+
+	name = CharString_createConstRefCStr("Test indirect dispatch buffer");
+	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
+		device, 
+		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect, 
+		name, 
+		sizeof(Dispatch), 
+		&indirectDispatchBuffer
 	));
 
 	_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, 2 * KIBI, 64, 64, true, &commandList));
@@ -566,7 +607,8 @@ clean:
 	DeviceBufferRef_dec(&vertexBuffers[1]);
 	DeviceBufferRef_dec(&indexBuffer);
 	DeviceBufferRef_dec(&deviceBuffer);
-	DeviceBufferRef_dec(&indirectBuffer);
+	DeviceBufferRef_dec(&indirectDrawBuffer);
+	DeviceBufferRef_dec(&indirectDispatchBuffer);
 	PipelineRef_decAll(&graphicsShaders);
 	PipelineRef_decAll(&computeShaders);
 	CommandListRef_dec(&commandList);

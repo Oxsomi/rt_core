@@ -6,12 +6,11 @@ void main(U32 i : SV_DispatchThreadID) {
 	if(i >= 2)			//As a test, we always draw 2 objects from the same buffer
 		return;
 
-	//Animate color
+	//Indirect dispatch
 
 	if (i == 0) {
-		U32 resourceId = getAppData1u(_swapchainCount + EResourceBinding_ConstantColorBufferRW);
-		F32x3 col = sin(_time.xxx * F32x3(0.5, 0.25, 0.125)) * 0.5 + 0.5;
-		setAtUniform(resourceId, 0, col);
+		U32 resourceId = getAppData1u(_swapchainCount + EResourceBinding_IndirectDispatchRW);
+		setAtUniform(resourceId, 0 * sizeof(Dispatch), I32x3(1, 1, 1));
 	}
 
 	//Indirect draws
