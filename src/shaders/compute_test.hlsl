@@ -6,7 +6,12 @@ void main(U32x2 i : SV_DispatchThreadID) {
 	if(!_swapchainCount)
 		return;
 
-	RWTexture2D<unorm F32x4> swapchain = rwTexture2DUniform(getAppData1u(0));
+	U32 writeSwapchain = getWriteSwapchain(0);
+
+	if(writeSwapchain == U32_MAX)
+		return;
+
+	RWTexture2D<unorm F32x4> swapchain = rwTexture2DUniform(writeSwapchain);
 
 	U32x2 wh;
 	swapchain.GetDimensions(wh.x, wh.y);

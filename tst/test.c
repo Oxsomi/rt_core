@@ -115,7 +115,7 @@ void onDraw(Window *w) {
 		.indirectDispatchWrite = DeviceBufferRef_ptr(indirectDispatchBuffer)->writeHandle,
 	};
 	
-	Buffer runtimeData = Buffer_createConstRef(&data, sizeof(data));
+	Buffer runtimeData = Buffer_createConstRef((const U32*)&data, sizeof(data));
 
 	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(device, commandLists, swapchains, runtimeData));
 
@@ -167,7 +167,7 @@ void onResize(Window *w) {
 		_gotoIfError(clean, List_createConstRef((const U8*) transitions, 2, sizeof(Transition), &transitionArr));
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[1]));
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(computeShaders, 1)));
 			_gotoIfError(clean, CommandListRef_dispatch1D(commandList, 1));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
@@ -176,7 +176,7 @@ void onResize(Window *w) {
 
 		CommandScopeDependency deps[3] = {
 			(CommandScopeDependency) {
-				.type = ECommandScopeDependencyType_Strong, 
+				.type = ECommandScopeDependencyType_Conditional, 
 				.id = EScopes_PrepareIndirect
 			}
 		};
@@ -193,7 +193,7 @@ void onResize(Window *w) {
 		transitionArr.length = 1;
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[2]));
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(computeShaders, 2)));
 			_gotoIfError(clean, CommandListRef_dispatchIndirect(commandList, indirectDispatchBuffer, 0));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
@@ -218,7 +218,7 @@ void onResize(Window *w) {
 
 			tilesX; tilesY;
 
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ((PipelineRef**)computeShaders.ptr)[0]));
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(computeShaders, 0)));
 			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
@@ -231,7 +231,7 @@ void onResize(Window *w) {
 		};
 
 		deps[1] = (CommandScopeDependency) { 
-			.type = ECommandScopeDependencyType_Strong, 
+			.type = ECommandScopeDependencyType_Conditional, 
 			.id = EScopes_PrepareIndirect 
 		};
 
@@ -262,13 +262,14 @@ void onResize(Window *w) {
 			List colors = (List) { 0 };
 			_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
 
-			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, ((PipelineRef**)graphicsShaders.ptr)[0]));
+			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, PipelineRef_at(graphicsShaders, 0)));
 			_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
 			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
 
-			PrimitiveBuffers primitiveBuffers = (PrimitiveBuffers) { 
+			SetPrimitiveBuffersCmd primitiveBuffers = (SetPrimitiveBuffersCmd) { 
 				.vertexBuffers = { vertexBuffers[0], vertexBuffers[1] },
-				.indexBuffer = indexBuffer
+				.indexBuffer = indexBuffer,
+				.isIndex32Bit = false
 			};
 
 			_gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers));

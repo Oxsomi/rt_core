@@ -9,14 +9,14 @@ void main(U32 i : SV_DispatchThreadID) {
 	//Indirect dispatch
 
 	if (i == 0) {
-		U32 resourceId = getAppData1u(_swapchainCount + EResourceBinding_IndirectDispatchRW);
+		U32 resourceId = getAppData1u(EResourceBinding_IndirectDispatchRW);
 		setAtUniform(resourceId, 0 * sizeof(Dispatch), I32x3(1, 1, 1));
 	}
 
 	//Indirect draws
 
 	{
-		U32 resourceId = getAppData1u(_swapchainCount + EResourceBinding_IndirectDrawRW);
+		U32 resourceId = getAppData1u(EResourceBinding_IndirectDrawRW);
 
 		IndirectDrawIndexed indirectDraw = (IndirectDrawIndexed) 0;
 		indirectDraw.instanceCount = 1;
