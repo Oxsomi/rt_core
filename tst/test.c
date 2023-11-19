@@ -133,7 +133,7 @@ void onResize(Window *w) {
 
 	//Record commands
 
-	_gotoIfError(clean, CommandListRef_begin(commandList, true));
+	_gotoIfError(clean, CommandListRef_begin(commandList, true, U64_MAX));
 
 	if(hasSwapchain) {
 
