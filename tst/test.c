@@ -562,7 +562,10 @@ int Program_run() {
 
 	//Setup buffer / window
 
-	WindowManager_lock(&Platform_instance.windowManager, U64_MAX);
+	ELockAcquire acq = Lock_lock(&Platform_instance.windowManager.lock, U64_MAX);
+
+	if(acq < ELockAcquire_Success)
+		_gotoIfError(clean, Error_invalidOperation(0));
 
 	WindowCallbacks callbacks = (WindowCallbacks) { 0 };
 	callbacks.onDraw = onDraw;
@@ -585,8 +588,10 @@ int Program_run() {
 
 	//Wait for user to close the window
 
-	WindowManager_unlock(&Platform_instance.windowManager);			//We don't need to do anything now
-	WindowManager_waitForExitAll(&Platform_instance.windowManager, U64_MAX);
+	if(acq == ELockAcquire_Acquired)
+		Lock_unlock(&Platform_instance.windowManager.lock);			//We don't need to do anything now
+
+	WindowManager_waitForExitAll(&Platform_instance.windowManager);
 
 	wind = NULL;
 
@@ -594,12 +599,12 @@ clean:
 
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 
-	if(wind && Lock_lock(&wind->lock, 5 * SECOND)) {
+	if(wind && Lock_lock(&wind->lock, 5 * SECOND) >= ELockAcquire_Success) {
 		Window_terminate(wind);
 		Lock_unlock(&wind->lock);
 	}
 
-	WindowManager_unlock(&Platform_instance.windowManager);
+	Lock_unlock(&Platform_instance.windowManager.lock);
 
 	for(U64 i = 0; i < sizeof(tempShaders) / sizeof(tempShaders[0]); ++i)
 		Buffer_freex(&tempShaders[i]);
