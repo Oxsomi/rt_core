@@ -565,7 +565,7 @@ int Program_run() {
 	ELockAcquire acq = Lock_lock(&Platform_instance.windowManager.lock, U64_MAX);
 
 	if(acq < ELockAcquire_Success)
-		_gotoIfError(clean, Error_invalidOperation(0));
+		_gotoIfError(clean, Error_invalidOperation(0, "Program_run() Couldn't acquire windowManager.lock"));
 
 	WindowCallbacks callbacks = (WindowCallbacks) { 0 };
 	callbacks.onDraw = onDraw;
