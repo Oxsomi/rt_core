@@ -38,27 +38,7 @@ else()
 	add_compile_options(-Wall -Wextra -Werror -mavx2)
 endif()
 
-# Types 
-
-file(GLOB_RECURSE headers "inc/*.h")
-file(GLOB_RECURSE sources "src/*.c")
-
-add_library(
-	rt_core
-	STATIC
-	${headers}
-	${sources}
-	CMakeLists.txt
-)
-
-# file(GLOB_RECURSE shaders "src/*.hlsl")
-
-set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/raytracing)
-
 add_subdirectory(core3)
-
-target_include_directories(rt_core PUBLIC inc/rt_core)
-target_link_libraries(rt_core PUBLIC OxC3_graphics)
 
 get_property(graphicsApi GLOBAL PROPERTY graphicsApi)
 
@@ -68,6 +48,18 @@ else()
 	set("shaderBinary" "dxil")
 endif()
 
+file(GLOB_RECURSE tests "tst/*.c")
+
+add_executable(
+	rt_core
+	${tests}
+	CMakeLists.txt
+)
+
+target_link_libraries(rt_core PUBLIC OxC3_graphics)
+
+set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/test)
+
 message("-- Targeting ${shaderBinary}")
 add_virtual_files(
 	TARGET rt_core NAME shaders 
@@ -75,18 +67,5 @@ add_virtual_files(
 	SELF ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-file(GLOB_RECURSE tests "tst/*.c")
-
-add_executable(
-	rt_core_tests
-	${tests}
-	CMakeLists.txt
-)
-
-set_target_properties(rt_core_tests PROPERTIES FOLDER Oxsomi/raytracing/test)
-
-target_link_libraries(rt_core_tests PUBLIC rt_core)
-
-add_virtual_dependencies(TARGET rt_core_tests DEPENDENCIES rt_core)
-configure_icon(rt_core_tests "${CMAKE_CURRENT_SOURCE_DIR}/res/logo.ico")
-configure_virtual_files(rt_core_tests)
+configure_icon(rt_core "${CMAKE_CURRENT_SOURCE_DIR}/res/logo.ico")
+configure_virtual_files(rt_core)

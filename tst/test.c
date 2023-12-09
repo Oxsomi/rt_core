@@ -18,7 +18,6 @@
 *  This is called dual licensing.
 */
 
-#include "math/camera.h"
 #include "types/buffer.h"
 #include "types/time.h"
 #include "types/flp.h"
@@ -26,12 +25,15 @@
 #include "platforms/keyboard.h"
 #include "platforms/platform.h"
 #include "platforms/thread.h"
+#include "platforms/input_device.h"
+#include "platforms/window_manager.h"
 #include "platforms/window.h"
 #include "platforms/log.h"
 #include "platforms/file.h"
 #include "platforms/ext/errorx.h"
 #include "platforms/ext/bufferx.h"
 #include "platforms/ext/stringx.h"
+#include "platforms/ext/listx.h"
 #include "graphics/generic/instance.h"
 #include "graphics/generic/device.h"
 #include "graphics/generic/swapchain.h"
@@ -42,67 +44,163 @@
 
 const Bool Platform_useWorkingDirectory = false;
 
-void Program_exit() { }
+//Globals
+
+typedef struct TestWindowManager {
+
+	GraphicsInstanceRef *instance;
+	GraphicsDeviceRef *device;
+	CommandListRef *prepCommandList;
+
+	DeviceBufferRef *vertexBuffers[2];
+	DeviceBufferRef *indexBuffer;
+	DeviceBufferRef *indirectDrawBuffer;			//sizeof(DrawCallIndexed) * 2
+	DeviceBufferRef *indirectDispatchBuffer;		//sizeof(Dispatch) * 2
+	DeviceBufferRef *deviceBuffer;				//Constant F32x3 for animating color
+
+	List computeShaders;
+	List graphicsShaders;
+	List commandLists;
+	List swapchains;
+
+	U64 framesSinceLastSecond;
+	F64 timeSinceLastSecond, time;
+
+} TestWindowManager;
+
+//Per window data
+
+typedef struct TestWindow {
+
+	F64 time;
+	CommandListRef *commandList;
+	RefPtr *swapchain;
+
+} TestWindow;
+
+void onDraw(Window *w);
+void onUpdate(Window *w, F64 dt);
+void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown);
+void onResize(Window *w);
+void onCreate(Window *w);
+void onDestroy(Window *w);
+
+WindowCallbacks TestWindow_getCallbacks() {
+	WindowCallbacks callbacks = (WindowCallbacks) { 0 };
+	callbacks.onDraw = onDraw;
+	callbacks.onUpdate = onUpdate;
+	callbacks.onDeviceButton = onButton;
+	callbacks.onResize = onResize;
+	callbacks.onCreate = onCreate;
+	callbacks.onDestroy = onDestroy;
+	return callbacks;
+}
+
+//Functions
 
 void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
 	if(device->type != EInputDeviceType_Keyboard)
 		return;
 
-	if(isDown && handle == EKey_F11)
-		Window_toggleFullScreen(w);
-}
+	if(isDown) {
 
-U64 framesSinceLastSecond = 0;
-F64 timeSinceLastSecond = 0, time = 0;
+		switch ((EKey) handle) {
+
+			//F11 we toggle full screen
+
+			case EKey_F11:
+				Window_toggleFullScreen(w);
+				break;
+
+			//F12 we spawn more windows (but only if multiple physical windows are supported, such as on desktop)
+
+			case EKey_F12:
+
+				WindowHandle wind = 0;
+				WindowManager_createWindow(
+					w->owner, EWindowType_Physical,
+					I32x2_zero(), EResolution_get(EResolution_FHD),
+					I32x2_zero(), I32x2_zero(),
+					EWindowHint_AllowFullscreen, 
+					CharString_createConstRefCStr("Rt core test (duped)"),
+					TestWindow_getCallbacks(),
+					EWindowFormat_BGRA8,
+					sizeof(TestWindow),
+					&wind
+				);
+
+				break;
+		}
+	}
+}
 
 void onUpdate(Window *w, F64 dt) {
-
-	w;
-
-	F64 prevTime = time;
-
-	time += dt;
-
-	if(F64_floor(prevTime) != F64_floor(time)) {
-
-		Log_debugLnx("%u fps", (U32)F64_round(framesSinceLastSecond / timeSinceLastSecond));
-
-		framesSinceLastSecond = 0;
-		timeSinceLastSecond = 0;
-	}
-
-	timeSinceLastSecond += dt;
+	((TestWindow*)w->extendedData.ptr)->time += dt;
 }
 
-GraphicsInstanceRef *instance = NULL;
-GraphicsDeviceRef *device = NULL;
-SwapchainRef *swapchain = NULL;
-CommandListRef *commandList = NULL;
-DeviceBufferRef *vertexBuffers[2] = { 0 };
-DeviceBufferRef *indexBuffer = NULL;
-DeviceBufferRef *deviceBuffer = NULL;				//Constant F32x3
-DeviceBufferRef *indirectDrawBuffer = NULL;			//sizeof(DrawCallIndexed) * 2
-DeviceBufferRef *indirectDispatchBuffer = NULL;		//sizeof(Dispatch) * 2
+void onManagerUpdate(WindowManager *windowManager, F64 dt) {
 
-List computeShaders;
-List graphicsShaders;
+	TestWindowManager *tw = (TestWindowManager*) windowManager->extendedData.ptr;
 
-void onDraw(Window *w) {
+	F64 prevTime = tw->time;
+	tw->time += dt;
 
-	w;
+	if(F64_floor(prevTime) != F64_floor(tw->time)) {
 
-	++framesSinceLastSecond;
+		Log_debugLnx("%u fps", (U32)F64_round(tw->framesSinceLastSecond / tw->timeSinceLastSecond));
+
+		tw->framesSinceLastSecond = 0;
+		tw->timeSinceLastSecond = 0;
+	}
+
+	tw->timeSinceLastSecond += dt;
+}
+
+void onDraw(Window *w) { w; }
+
+void onManagerDraw(WindowManager *windowManager) {
+
+	TestWindowManager *twm = (TestWindowManager*) windowManager->extendedData.ptr;
+	++twm->framesSinceLastSecond;
 
 	Error err = Error_none();
 
-	List commandLists = (List) { 0 };
-	List swapchains = (List) { 0 };
+	_gotoIfError(clean, List_clear(&twm->commandLists));
+	_gotoIfError(clean, List_clear(&twm->swapchains));
+	_gotoIfError(clean, List_reservex(&twm->commandLists, windowManager->windows.length + 1));
+	_gotoIfError(clean, List_reservex(&twm->swapchains, windowManager->windows.length));
 
-	_gotoIfError(clean, List_createConstRef((const U8*) &commandList, 1, sizeof(commandList), &commandLists));
-	_gotoIfError(clean, List_createConstRef((const U8*) &swapchain, 1, sizeof(swapchain), &swapchains));
+	_gotoIfError(clean, List_pushBackx(
+		&twm->commandLists, Buffer_createConstRef(&twm->prepCommandList, sizeof(twm->prepCommandList))
+	));
 
-	DeviceBuffer *deviceBuf = DeviceBufferRef_ptr(deviceBuffer);
+	for(WindowHandle handle = 0; handle < windowManager->windows.length; ++handle) {
+		
+		Window *w = WindowManager_getWindow(windowManager, handle + 1);
+
+		if(!w->owner)
+			continue;
+
+		Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
+
+		if (hasSwapchain) {
+
+			TestWindow *tw = (TestWindow*) w->extendedData.ptr;
+			CommandListRef *cmd = tw->commandList;
+			RefPtr *swap = tw->swapchain;
+
+			_gotoIfError(clean, List_pushBackx(&twm->commandLists, Buffer_createConstRef(&cmd, sizeof(cmd))));
+
+			if (swap->typeId == (ETypeId) EGraphicsTypeId_Swapchain)
+				_gotoIfError(clean, List_pushBackx(&twm->swapchains, Buffer_createConstRef(&swap, sizeof(swap))));
+		}
+	}
+
+	if(twm->commandLists.length == 1)		//No windows to update, only root command list (not important without viewports)
+		return;
+
+	DeviceBuffer *deviceBuf = DeviceBufferRef_ptr(twm->deviceBuffer);
 
 	typedef struct RuntimeData {
 		U32 constantColorRead, constantColorWrite, indirectDrawWrite, indirectDispatchWrite;
@@ -111,13 +209,13 @@ void onDraw(Window *w) {
 	RuntimeData data = (RuntimeData) {
 		.constantColorRead = deviceBuf->readHandle,
 		.constantColorWrite = deviceBuf->writeHandle,
-		.indirectDrawWrite = DeviceBufferRef_ptr(indirectDrawBuffer)->writeHandle,
-		.indirectDispatchWrite = DeviceBufferRef_ptr(indirectDispatchBuffer)->writeHandle,
+		.indirectDrawWrite = DeviceBufferRef_ptr(twm->indirectDrawBuffer)->writeHandle,
+		.indirectDispatchWrite = DeviceBufferRef_ptr(twm->indirectDispatchBuffer)->writeHandle,
 	};
-	
+
 	Buffer runtimeData = Buffer_createConstRef((const U32*)&data, sizeof(data));
 
-	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(device, commandLists, swapchains, runtimeData));
+	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(twm->device, twm->commandLists, twm->swapchains, runtimeData));
 
 clean:
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
@@ -125,11 +223,25 @@ clean:
 
 void onResize(Window *w) {
 
+	TestWindowManager *twm = (TestWindowManager*) w->owner->extendedData.ptr;
+	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
+	CommandListRef *commandList = tw->commandList;
+	SwapchainRef *swapchain = tw->swapchain;
+
 	Error err = Error_none();
 	Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
 
-	if(hasSwapchain)
-		_gotoIfError(clean, Swapchain_resize(SwapchainRef_ptr(swapchain)));
+	if(!hasSwapchain) {
+
+		_gotoIfError(cleanTemp, CommandListRef_begin(commandList, true, U64_MAX));
+		_gotoIfError(cleanTemp, CommandListRef_end(commandList));
+
+	cleanTemp:
+		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+		return;
+	}
+
+	_gotoIfError(clean, Swapchain_resize(SwapchainRef_ptr(swapchain)));
 
 	//Record commands
 
@@ -139,8 +251,6 @@ void onResize(Window *w) {
 
 		typedef enum EScopes {
 
-			EScopes_PrepareIndirect,
-			EScopes_IndirectCalcConstant,
 			EScopes_GraphicsTest,
 			EScopes_ComputeTest
 
@@ -148,55 +258,12 @@ void onResize(Window *w) {
 
 		//Prepare 2 indirect draw calls and update constant color
 
-		Transition transitions[3] = {
-			(Transition) {
-				.resource = indirectDrawBuffer,
-				.range = { .buffer = (BufferRange) { 0 } },
-				.stage = EPipelineStage_Compute,
-				.isWrite = true
-			},
-			(Transition) {
-				.resource = indirectDispatchBuffer,
-				.range = { .buffer = (BufferRange) { 0 } },
-				.stage = EPipelineStage_Compute,
-				.isWrite = true
-			}
-		};
+		Transition transitions[1] = { 0 };
+		CommandScopeDependency deps[1] = { 0};
 
 		List transitionArr = (List) { 0 }, depsArr = (List) { 0 };
-		_gotoIfError(clean, List_createConstRef((const U8*) transitions, 2, sizeof(Transition), &transitionArr));
-
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(computeShaders, 1)));
-			_gotoIfError(clean, CommandListRef_dispatch1D(commandList, 1));
-			_gotoIfError(clean, CommandListRef_endScope(commandList));
-		}
-
-		//Test indirect compute pipeline
-
-		CommandScopeDependency deps[3] = {
-			(CommandScopeDependency) {
-				.type = ECommandScopeDependencyType_Conditional, 
-				.id = EScopes_PrepareIndirect
-			}
-		};
-
+		_gotoIfError(clean, List_createConstRef((const U8*) transitions, 1, sizeof(Transition), &transitionArr));
 		_gotoIfError(clean, List_createConstRef((const U8*) &deps, 1, sizeof(deps[0]), &depsArr));
-
-		transitions[0] = (Transition) {
-			.resource = deviceBuffer,
-			.range = { .buffer = (BufferRange) { 0 } },
-			.stage = EPipelineStage_Compute,
-			.isWrite = true
-		};
-
-		transitionArr.length = 1;
-
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(computeShaders, 2)));
-			_gotoIfError(clean, CommandListRef_dispatchIndirect(commandList, indirectDispatchBuffer, 0));
-			_gotoIfError(clean, CommandListRef_endScope(commandList));
-		}
 
 		//Test compute pipeline
 
@@ -218,7 +285,7 @@ void onResize(Window *w) {
 
 			tilesX; tilesY;
 
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(computeShaders, 0)));
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(twm->computeShaders, 0)));
 			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
@@ -230,20 +297,10 @@ void onResize(Window *w) {
 			.id = EScopes_ComputeTest
 		};
 
-		deps[1] = (CommandScopeDependency) { 
-			.type = ECommandScopeDependencyType_Conditional, 
-			.id = EScopes_PrepareIndirect 
-		};
-
-		deps[2] = (CommandScopeDependency) { 
-			.type = ECommandScopeDependencyType_Unconditional, 
-			.id = EScopes_IndirectCalcConstant 
-		};
-
-		depsArr.length = 3;
+		depsArr.length = 1;
 
 		transitions[0] = (Transition) {
-			.resource = deviceBuffer,
+			.resource = twm->deviceBuffer,
 			.range = { .buffer = (BufferRange) { 0 } },
 			.stage = EPipelineStage_Pixel,
 			.isWrite = false
@@ -262,19 +319,19 @@ void onResize(Window *w) {
 			List colors = (List) { 0 };
 			_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
 
-			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, PipelineRef_at(graphicsShaders, 0)));
+			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, PipelineRef_at(twm->graphicsShaders, 0)));
 			_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
 			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
 
 			SetPrimitiveBuffersCmd primitiveBuffers = (SetPrimitiveBuffersCmd) { 
-				.vertexBuffers = { vertexBuffers[0], vertexBuffers[1] },
-				.indexBuffer = indexBuffer,
+				.vertexBuffers = { twm->vertexBuffers[0], twm->vertexBuffers[1] },
+				.indexBuffer = twm->indexBuffer,
 				.isIndex32Bit = false
 			};
 
 			_gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers));
 			_gotoIfError(clean, CommandListRef_drawIndexed(commandList, 6, 1));
-			_gotoIfError(clean, CommandListRef_drawIndirect(commandList, indirectDrawBuffer, 0, 0, 2, true));
+			_gotoIfError(clean, CommandListRef_drawIndirect(commandList, twm->indirectDrawBuffer, 0, 0, 2, true));
 
 			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
@@ -289,19 +346,30 @@ clean:
 
 void onCreate(Window *w) {
 
-	if(!(w->flags & EWindowFlags_IsVirtual)) {
+	TestWindowManager *twm = (TestWindowManager*) w->owner->extendedData.ptr;
+	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
+	Error err = Error_none();
+	_gotoIfError(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &tw->commandList));
 
+	if(w->type == EWindowType_Physical) {
 		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w, .usage = ESwapchainUsage_AllowCompute };
-
-		Error err = GraphicsDeviceRef_createSwapchain(device, swapchainInfo, &swapchain);
-		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+		_gotoIfError(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, &tw->swapchain));
 	}
+
+	//TODO: RenderTarget into swapchain
+
+	else {
+
+	}
+
+clean:
+	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
 
 void onDestroy(Window *w) {
-
-	if(!(w->flags & EWindowFlags_IsVirtual))
-		SwapchainRef_dec(&swapchain);
+	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
+	RefPtr_dec(&tw->swapchain);
+	CommandListRef_dec(&tw->commandList);
 }
 
 typedef struct VertexPosBuffer {
@@ -316,11 +384,17 @@ typedef struct VertexDataBuffer {
 
 } VertexDataBuffer;
 
-int Program_run() {
+void onManagerCreate(WindowManager *manager) {
 
 	Error err = Error_none();
-	Window *wind = NULL;
 	Buffer tempShaders[3] = { 0 };
+
+	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
+
+	twm->computeShaders = (List) { 0 };
+	twm->graphicsShaders = (List) { 0 };
+	twm->commandLists = List_createEmpty(sizeof(CommandListRef*));
+	twm->swapchains = List_createEmpty(sizeof(SwapchainRef*));
 
 	//Graphics test
 
@@ -334,10 +408,10 @@ int Program_run() {
 
 	Bool isVerbose = false;
 
-	_gotoIfError(clean, GraphicsInstance_create(applicationInfo, isVerbose, &instance));
+	_gotoIfError(clean, GraphicsInstance_create(applicationInfo, isVerbose, &twm->instance));
 
 	_gotoIfError(clean, GraphicsInstance_getPreferredDevice(
-		GraphicsInstanceRef_ptr(instance),
+		GraphicsInstanceRef_ptr(twm->instance),
 		requiredCapabilities,
 		GraphicsInstance_vendorMaskAll,
 		GraphicsInstance_deviceTypeAll,
@@ -347,10 +421,7 @@ int Program_run() {
 
 	GraphicsDeviceInfo_print(&deviceInfo, true);
 
-	_gotoIfError(clean, GraphicsDeviceRef_create(instance, &deviceInfo, isVerbose, &device));
-
-	computeShaders = (List) { 0 };
-	graphicsShaders = (List) { 0 };
+	_gotoIfError(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, isVerbose, &twm->device));
 
 	//Create pipelines
 
@@ -380,7 +451,7 @@ int Program_run() {
 		_gotoIfError(clean, List_createConstRef((const U8*) &tempShaders[0], 3, sizeof(Buffer), &binaries));
 		_gotoIfError(clean, List_createConstRef((const U8*) &nameArr, 3, sizeof(nameArr[0]), &names));
 
-		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(device, &binaries, names, &computeShaders));
+		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(twm->device, &binaries, names, &twm->computeShaders));
 
 		tempShaders[0] = tempShaders[1] = tempShaders[2] = Buffer_createNull();
 	}
@@ -409,7 +480,7 @@ int Program_run() {
 		_gotoIfError(clean, List_createConstRef(
 			(const U8*) stageArr, sizeof(stageArr) / sizeof(stageArr[0]), sizeof(stageArr[0]), &stages
 		));
-	
+
 		PipelineGraphicsInfo infoArr[1] = {
 			(PipelineGraphicsInfo) {
 				.stageCount = 2,
@@ -433,10 +504,7 @@ int Program_run() {
 			}
 		};
 
-		CharString nameArr[] = {
-			CharString_createConstRefCStr("Test graphics pipeline")
-		};
-
+		CharString nameArr[] = { CharString_createConstRefCStr("Test graphics pipeline") };
 		List infos = (List) { 0 }, names = (List) { 0 };
 
 		_gotoIfError(clean, List_createConstRef(
@@ -447,7 +515,9 @@ int Program_run() {
 			(const U8*) &nameArr, sizeof(nameArr) / sizeof(nameArr[0]), sizeof(nameArr[0]), &names)
 		);
 
-		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesGraphics(device, &stages, &infos, names, &graphicsShaders));
+		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesGraphics(
+			twm->device, &stages, &infos, names, &twm->graphicsShaders
+		));
 
 		tempShaders[0] = tempShaders[1] = Buffer_createNull();
 	}
@@ -503,13 +573,13 @@ int Program_run() {
 	Buffer vertexData = Buffer_createConstRef(vertexPos, sizeof(vertexPos));
 	CharString name = CharString_createConstRefCStr("Vertex position buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		device, EDeviceBufferUsage_Vertex, name, &vertexData, &vertexBuffers[0]
+		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[0]
 	));
 
 	vertexData = Buffer_createConstRef(vertDat, sizeof(vertDat));
 	name = CharString_createConstRefCStr("Vertex attribute buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		device, EDeviceBufferUsage_Vertex, name, &vertexData, &vertexBuffers[1]
+		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[1]
 	));
 
 	U16 indexDat[] = {
@@ -532,95 +602,167 @@ int Program_run() {
 	Buffer indexData = Buffer_createConstRef(indexDat, sizeof(indexDat));
 	name = CharString_createConstRefCStr("Index buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		device, EDeviceBufferUsage_Index, name, &indexData, &indexBuffer
+		twm->device, EDeviceBufferUsage_Index, name, &indexData, &twm->indexBuffer
 	));
 
 	name = CharString_createConstRefCStr("Test shader buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
-		device, EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4), &deviceBuffer
+		twm->device, EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4), &twm->deviceBuffer
 	));
 
 	name = CharString_createConstRefCStr("Test indirect draw buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
-		device, 
+		twm->device, 
 		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect, 
 		name, 
 		sizeof(DrawCallIndexed) * 2, 
-		&indirectDrawBuffer
+		&twm->indirectDrawBuffer
 	));
 
 	name = CharString_createConstRefCStr("Test indirect dispatch buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
-		device, 
+		twm->device, 
 		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect, 
 		name, 
 		sizeof(Dispatch), 
-		&indirectDispatchBuffer
+		&twm->indirectDispatchBuffer
 	));
 
-	_gotoIfError(clean, GraphicsDeviceRef_createCommandList(device, 2 * KIBI, 64, 64, true, &commandList));
+	_gotoIfError(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &twm->prepCommandList));
 
-	//Setup buffer / window
+	CommandListRef *commandList = twm->prepCommandList;
 
-	ELockAcquire acq = Lock_lock(&Platform_instance.windowManager.lock, U64_MAX);
+	//Record commands
 
-	if(acq < ELockAcquire_Success)
-		_gotoIfError(clean, Error_invalidOperation(0, "Program_run() Couldn't acquire windowManager.lock"));
+	_gotoIfError(clean, CommandListRef_begin(commandList, true, U64_MAX));
 
-	WindowCallbacks callbacks = (WindowCallbacks) { 0 };
-	callbacks.onDraw = onDraw;
-	callbacks.onUpdate = onUpdate;
-	callbacks.onDeviceButton = onButton;
-	callbacks.onResize = onResize;
-	callbacks.onCreate = onCreate;
-	callbacks.onDestroy = onDestroy;
+	typedef enum EScopes {
 
-	_gotoIfError(clean, WindowManager_createPhysical(
-		&Platform_instance.windowManager,
-		I32x2_zero(), EResolution_get(EResolution_FHD),
-		I32x2_zero(), I32x2_zero(),
-		EWindowHint_AllowFullscreen, 
-		CharString_createConstRefCStr("Rt core test"),
-		callbacks,
-		EWindowFormat_BGRA8,
-		&wind
-	));
+		EScopes_PrepareIndirect,
+		EScopes_IndirectCalcConstant
 
-	//Wait for user to close the window
+	} EScopes;
 
-	if(acq == ELockAcquire_Acquired)
-		Lock_unlock(&Platform_instance.windowManager.lock);			//We don't need to do anything now
+	//Prepare 2 indirect draw calls and update constant color
 
-	WindowManager_waitForExitAll(&Platform_instance.windowManager);
+	Transition transitions[3] = {
+		(Transition) {
+			.resource = twm->indirectDrawBuffer,
+			.range = { .buffer = (BufferRange) { 0 } },
+			.stage = EPipelineStage_Compute,
+			.isWrite = true
+		},
+		(Transition) {
+			.resource = twm->indirectDispatchBuffer,
+			.range = { .buffer = (BufferRange) { 0 } },
+			.stage = EPipelineStage_Compute,
+			.isWrite = true
+		}
+	};
 
-	wind = NULL;
+	List transitionArr = (List) { 0 }, depsArr = (List) { 0 };
+	_gotoIfError(clean, List_createConstRef((const U8*) transitions, 2, sizeof(Transition), &transitionArr));
 
-clean:
-
-	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
-
-	if(wind && Lock_lock(&wind->lock, 5 * SECOND) >= ELockAcquire_Success) {
-		Window_terminate(wind);
-		Lock_unlock(&wind->lock);
+	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
+		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(twm->computeShaders, 1)));
+		_gotoIfError(clean, CommandListRef_dispatch1D(commandList, 1));
+		_gotoIfError(clean, CommandListRef_endScope(commandList));
 	}
 
-	Lock_unlock(&Platform_instance.windowManager.lock);
+	//Test indirect compute pipeline
+
+	CommandScopeDependency deps[3] = {
+		(CommandScopeDependency) {
+			.type = ECommandScopeDependencyType_Conditional, 
+			.id = EScopes_PrepareIndirect
+		}
+	};
+
+	_gotoIfError(clean, List_createConstRef((const U8*) &deps, 1, sizeof(deps[0]), &depsArr));
+
+	transitions[0] = (Transition) {
+		.resource = twm->deviceBuffer,
+		.range = { .buffer = (BufferRange) { 0 } },
+		.stage = EPipelineStage_Compute,
+		.isWrite = true
+	};
+
+	transitionArr.length = 1;
+
+	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
+		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(twm->computeShaders, 2)));
+		_gotoIfError(clean, CommandListRef_dispatchIndirect(commandList, twm->indirectDispatchBuffer, 0));
+		_gotoIfError(clean, CommandListRef_endScope(commandList));
+	}
+
+	_gotoIfError(clean, CommandListRef_end(commandList));
+
+clean:
 
 	for(U64 i = 0; i < sizeof(tempShaders) / sizeof(tempShaders[0]); ++i)
 		Buffer_freex(&tempShaders[i]);
 
-	DeviceBufferRef_dec(&vertexBuffers[0]);
-	DeviceBufferRef_dec(&vertexBuffers[1]);
-	DeviceBufferRef_dec(&indexBuffer);
-	DeviceBufferRef_dec(&deviceBuffer);
-	DeviceBufferRef_dec(&indirectDrawBuffer);
-	DeviceBufferRef_dec(&indirectDispatchBuffer);
-	PipelineRef_decAll(&graphicsShaders);
-	PipelineRef_decAll(&computeShaders);
-	CommandListRef_dec(&commandList);
-	GraphicsDeviceRef_wait(device);
-	GraphicsDeviceRef_dec(&device);
-	GraphicsInstanceRef_dec(&instance);
-
-	return 1;
+	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
+
+void onManagerDestroy(WindowManager *manager) {
+
+	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
+
+	//Delete objects
+
+	DeviceBufferRef_dec(&twm->vertexBuffers[0]);
+	DeviceBufferRef_dec(&twm->vertexBuffers[1]);
+	DeviceBufferRef_dec(&twm->indexBuffer);
+	DeviceBufferRef_dec(&twm->deviceBuffer);
+	DeviceBufferRef_dec(&twm->indirectDrawBuffer);
+	DeviceBufferRef_dec(&twm->indirectDispatchBuffer);
+	PipelineRef_decAll(&twm->graphicsShaders);
+	PipelineRef_decAll(&twm->computeShaders);
+	CommandListRef_dec(&twm->prepCommandList);
+
+	//Wait for device and then delete device & instance
+
+	GraphicsDeviceRef_wait(twm->device);
+	GraphicsDeviceRef_dec(&twm->device);
+	GraphicsInstanceRef_dec(&twm->instance);
+
+	List_freex(&twm->commandLists);
+	List_freex(&twm->swapchains);
+}
+
+int Program_run() {
+
+	Error err = Error_none();
+
+	WindowManagerCallbacks callbacks;
+	callbacks.onDraw = onManagerDraw;
+	callbacks.onUpdate = onManagerUpdate;
+	callbacks.onCreate = onManagerCreate;
+	callbacks.onDestroy = onManagerDestroy;
+
+	WindowManager manager = (WindowManager) { 0 };
+	_gotoIfError(clean, WindowManager_create(callbacks, sizeof(TestWindowManager), &manager));
+
+	WindowHandle wind = 0;
+	_gotoIfError(clean, WindowManager_createWindow(
+		&manager, EWindowType_Physical,
+		I32x2_zero(), EResolution_get(EResolution_FHD),
+		I32x2_zero(), I32x2_zero(),
+		EWindowHint_AllowFullscreen, 
+		CharString_createConstRefCStr("Rt core test"),
+		TestWindow_getCallbacks(),
+		EWindowFormat_BGRA8,
+		sizeof(TestWindow),
+		&wind
+	));
+
+	_gotoIfError(clean, WindowManager_wait(&manager));		//Wait til all windows are closed and process their events
+
+clean:
+	WindowManager_free(&manager);
+	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+	return err.genericError ? -1 : 1;
+}
+
+void Program_exit() { }
