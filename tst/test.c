@@ -113,9 +113,9 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 				Window_toggleFullScreen(w);
 				break;
 
-			//F12 we spawn more windows (but only if multiple physical windows are supported, such as on desktop)
+			//F10 we spawn more windows (but only if multiple physical windows are supported, such as on desktop)
 
-			case EKey_F12:
+			case EKey_F10:
 
 				WindowHandle wind = 0;
 				WindowManager_createWindow(
@@ -384,6 +384,10 @@ typedef struct VertexDataBuffer {
 
 } VertexDataBuffer;
 
+VertexPosBuffer vertexPos[11];
+VertexDataBuffer vertDat[11];
+U16 indexDat[15];
+
 void onManagerCreate(WindowManager *manager) {
 
 	Error err = Error_none();
@@ -524,7 +528,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	//Mesh data
 
-	VertexPosBuffer vertexPos[] = {
+	VertexPosBuffer vertexPosTemp[] = {
 
 		//Test quad in center
 
@@ -547,7 +551,9 @@ void onManagerCreate(WindowManager *manager) {
 		(VertexPosBuffer) { { F32_castF16(0.75f),	F32_castF16(1) } },
 	};
 
-	VertexDataBuffer vertDat[] = {
+	Buffer_copy(Buffer_createRef(vertexPos, sizeof(vertexPos)), Buffer_createConstRef(vertexPosTemp, sizeof(vertexPosTemp)));
+
+	VertexDataBuffer vertDatTemp[] = {
 
 		//Test quad in center
 
@@ -570,19 +576,9 @@ void onManagerCreate(WindowManager *manager) {
 		(VertexDataBuffer) { { F32_castF16(0),		F32_castF16(1) } }
 	};
 
-	Buffer vertexData = Buffer_createConstRef(vertexPos, sizeof(vertexPos));
-	CharString name = CharString_createConstRefCStr("Vertex position buffer");
-	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[0]
-	));
+	Buffer_copy(Buffer_createRef(vertDat, sizeof(vertDat)), Buffer_createConstRef(vertDatTemp, sizeof(vertDatTemp)));
 
-	vertexData = Buffer_createConstRef(vertDat, sizeof(vertDat));
-	name = CharString_createConstRefCStr("Vertex attribute buffer");
-	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[1]
-	));
-
-	U16 indexDat[] = {
+	U16 indexDatTemp[] = {
 
 		//Test quad in center of screen
 
@@ -598,6 +594,20 @@ void onManagerCreate(WindowManager *manager) {
 		7, 8, 9,
 		9, 10, 7
 	};
+
+	Buffer_copy(Buffer_createRef(indexDat, sizeof(indexDat)), Buffer_createConstRef(indexDatTemp, sizeof(indexDatTemp)));
+
+	Buffer vertexData = Buffer_createConstRef(vertexPos, sizeof(vertexPos));
+	CharString name = CharString_createConstRefCStr("Vertex position buffer");
+	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[0]
+	));
+
+	vertexData = Buffer_createConstRef(vertDat, sizeof(vertDat));
+	name = CharString_createConstRefCStr("Vertex attribute buffer");
+	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[1]
+	));
 
 	Buffer indexData = Buffer_createConstRef(indexDat, sizeof(indexDat));
 	name = CharString_createConstRefCStr("Index buffer");
