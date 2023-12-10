@@ -117,7 +117,7 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
 			case EKey_F10:
 
-				WindowHandle wind = 0;
+				Window *wind = NULL;
 				WindowManager_createWindow(
 					w->owner, EWindowType_Physical,
 					I32x2_zero(), EResolution_get(EResolution_FHD),
@@ -175,13 +175,9 @@ void onManagerDraw(WindowManager *windowManager) {
 		&twm->commandLists, Buffer_createConstRef(&twm->prepCommandList, sizeof(twm->prepCommandList))
 	));
 
-	for(WindowHandle handle = 0; handle < windowManager->windows.length; ++handle) {
+	for(U64 handle = 0; handle < windowManager->windows.length; ++handle) {
 		
-		Window *w = WindowManager_getWindow(windowManager, handle + 1);
-
-		if(!w->owner)
-			continue;
-
+		Window *w = *List_ptrT(Window*, windowManager->windows, handle);
 		Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
 
 		if (hasSwapchain) {
@@ -384,10 +380,6 @@ typedef struct VertexDataBuffer {
 
 } VertexDataBuffer;
 
-VertexPosBuffer vertexPos[11];
-VertexDataBuffer vertDat[11];
-U16 indexDat[15];
-
 void onManagerCreate(WindowManager *manager) {
 
 	Error err = Error_none();
@@ -528,7 +520,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	//Mesh data
 
-	VertexPosBuffer vertexPosTemp[] = {
+	VertexPosBuffer vertexPos[] = {
 
 		//Test quad in center
 
@@ -551,9 +543,7 @@ void onManagerCreate(WindowManager *manager) {
 		(VertexPosBuffer) { { F32_castF16(0.75f),	F32_castF16(1) } },
 	};
 
-	Buffer_copy(Buffer_createRef(vertexPos, sizeof(vertexPos)), Buffer_createConstRef(vertexPosTemp, sizeof(vertexPosTemp)));
-
-	VertexDataBuffer vertDatTemp[] = {
+	VertexDataBuffer vertDat[] = {
 
 		//Test quad in center
 
@@ -576,9 +566,7 @@ void onManagerCreate(WindowManager *manager) {
 		(VertexDataBuffer) { { F32_castF16(0),		F32_castF16(1) } }
 	};
 
-	Buffer_copy(Buffer_createRef(vertDat, sizeof(vertDat)), Buffer_createConstRef(vertDatTemp, sizeof(vertDatTemp)));
-
-	U16 indexDatTemp[] = {
+	U16 indexDat[] = {
 
 		//Test quad in center of screen
 
@@ -594,8 +582,6 @@ void onManagerCreate(WindowManager *manager) {
 		7, 8, 9,
 		9, 10, 7
 	};
-
-	Buffer_copy(Buffer_createRef(indexDat, sizeof(indexDat)), Buffer_createConstRef(indexDatTemp, sizeof(indexDatTemp)));
 
 	Buffer vertexData = Buffer_createConstRef(vertexPos, sizeof(vertexPos));
 	CharString name = CharString_createConstRefCStr("Vertex position buffer");
@@ -754,7 +740,7 @@ int Program_run() {
 	WindowManager manager = (WindowManager) { 0 };
 	_gotoIfError(clean, WindowManager_create(callbacks, sizeof(TestWindowManager), &manager));
 
-	WindowHandle wind = 0;
+	Window *wind = NULL;
 	_gotoIfError(clean, WindowManager_createWindow(
 		&manager, EWindowType_Physical,
 		I32x2_zero(), EResolution_get(EResolution_FHD),
