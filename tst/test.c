@@ -18,6 +18,7 @@
 *  This is called dual licensing.
 */
 
+#include "platforms/ext/listx_impl.h"
 #include "types/buffer.h"
 #include "types/time.h"
 #include "types/flp.h"
@@ -33,7 +34,6 @@
 #include "platforms/ext/errorx.h"
 #include "platforms/ext/bufferx.h"
 #include "platforms/ext/stringx.h"
-#include "platforms/ext/listx.h"
 #include "graphics/generic/instance.h"
 #include "graphics/generic/device.h"
 #include "graphics/generic/swapchain.h"
@@ -58,10 +58,10 @@ typedef struct TestWindowManager {
 	DeviceBufferRef *indirectDispatchBuffer;		//sizeof(Dispatch) * 2
 	DeviceBufferRef *deviceBuffer;				//Constant F32x3 for animating color
 
-	List computeShaders;
-	List graphicsShaders;
-	List commandLists;
-	List swapchains;
+	ListPipelineRef computeShaders;
+	ListPipelineRef graphicsShaders;
+	ListCommandListRef commandLists;
+	ListSwapchainRef swapchains;
 
 	U64 framesSinceLastSecond;
 	F64 timeSinceLastSecond, time;
@@ -123,7 +123,7 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 					I32x2_zero(), EResolution_get(EResolution_FHD),
 					I32x2_zero(), I32x2_zero(),
 					EWindowHint_AllowFullscreen, 
-					CharString_createConstRefCStr("Rt core test (duped)"),
+					CharString_createRefCStrConst("Rt core test (duped)"),
 					TestWindow_getCallbacks(),
 					EWindowFormat_BGRA8,
 					sizeof(TestWindow),
@@ -166,18 +166,16 @@ void onManagerDraw(WindowManager *windowManager) {
 
 	Error err = Error_none();
 
-	_gotoIfError(clean, List_clear(&twm->commandLists));
-	_gotoIfError(clean, List_clear(&twm->swapchains));
-	_gotoIfError(clean, List_reservex(&twm->commandLists, windowManager->windows.length + 1));
-	_gotoIfError(clean, List_reservex(&twm->swapchains, windowManager->windows.length));
+	_gotoIfError(clean, ListCommandListRef_clear(&twm->commandLists));
+	_gotoIfError(clean, ListSwapchainRef_clear(&twm->swapchains));
+	_gotoIfError(clean, ListCommandListRef_reservex(&twm->commandLists, windowManager->windows.length + 1));
+	_gotoIfError(clean, ListSwapchainRef_reservex(&twm->swapchains, windowManager->windows.length));
 
-	_gotoIfError(clean, List_pushBackx(
-		&twm->commandLists, Buffer_createConstRef(&twm->prepCommandList, sizeof(twm->prepCommandList))
-	));
+	_gotoIfError(clean, ListCommandListRef_pushBackx(&twm->commandLists, twm->prepCommandList));
 
 	for(U64 handle = 0; handle < windowManager->windows.length; ++handle) {
 		
-		Window *w = *List_ptrT(Window*, windowManager->windows, handle);
+		Window *w = windowManager->windows.ptr[handle];
 		Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
 
 		if (hasSwapchain) {
@@ -186,10 +184,10 @@ void onManagerDraw(WindowManager *windowManager) {
 			CommandListRef *cmd = tw->commandList;
 			RefPtr *swap = tw->swapchain;
 
-			_gotoIfError(clean, List_pushBackx(&twm->commandLists, Buffer_createConstRef(&cmd, sizeof(cmd))));
+			_gotoIfError(clean, ListCommandListRef_pushBackx(&twm->commandLists, cmd));
 
 			if (swap->typeId == (ETypeId) EGraphicsTypeId_Swapchain)
-				_gotoIfError(clean, List_pushBackx(&twm->swapchains, Buffer_createConstRef(&swap, sizeof(swap))));
+				_gotoIfError(clean, ListSwapchainRef_pushBackx(&twm->swapchains, swap));
 		}
 	}
 
@@ -209,8 +207,7 @@ void onManagerDraw(WindowManager *windowManager) {
 		.indirectDispatchWrite = DeviceBufferRef_ptr(twm->indirectDispatchBuffer)->writeHandle,
 	};
 
-	Buffer runtimeData = Buffer_createConstRef((const U32*)&data, sizeof(data));
-
+	Buffer runtimeData = Buffer_createRefConst((const U32*)&data, sizeof(data));
 	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(twm->device, twm->commandLists, twm->swapchains, runtimeData));
 
 clean:
@@ -257,9 +254,10 @@ void onResize(Window *w) {
 		Transition transitions[1] = { 0 };
 		CommandScopeDependency deps[1] = { 0};
 
-		List transitionArr = (List) { 0 }, depsArr = (List) { 0 };
-		_gotoIfError(clean, List_createConstRef((const U8*) transitions, 1, sizeof(Transition), &transitionArr));
-		_gotoIfError(clean, List_createConstRef((const U8*) &deps, 1, sizeof(deps[0]), &depsArr));
+		ListTransition transitionArr = (ListTransition) { 0 };
+		ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
+		_gotoIfError(clean, ListTransition_createRefConst(transitions, 1, &transitionArr));
+		_gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 1, &depsArr));
 
 		//Test compute pipeline
 
@@ -272,7 +270,9 @@ void onResize(Window *w) {
 
 		transitionArr.length = 1;
 
-		if (!CommandListRef_startScope(commandList, transitionArr, EScopes_ComputeTest, (List) { 0 }).genericError) {
+		if (!CommandListRef_startScope(
+			commandList, transitionArr, EScopes_ComputeTest, (ListCommandScopeDependency) { 0 }
+		).genericError) {
 
 			Swapchain *swapchainPtr = SwapchainRef_ptr(swapchain);
 
@@ -281,7 +281,7 @@ void onResize(Window *w) {
 
 			tilesX; tilesY;
 
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(twm->computeShaders, 0)));
+			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)));
 			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
@@ -312,11 +312,15 @@ void onResize(Window *w) {
 				.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
 			};
 
-			List colors = (List) { 0 };
-			_gotoIfError(clean, List_createConstRef((const U8*) &attachmentInfo, 1, sizeof(AttachmentInfo), &colors));
+			ListAttachmentInfo colors = (ListAttachmentInfo) { 0 };
+			_gotoIfError(clean, ListAttachmentInfo_createRefConst(&attachmentInfo, 1, &colors));
 
-			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, PipelineRef_at(twm->graphicsShaders, 0)));
-			_gotoIfError(clean, CommandListRef_startRenderExt(commandList, I32x2_zero(), I32x2_zero(), colors, (List) { 0 }));
+			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 0)));
+
+			_gotoIfError(clean, CommandListRef_startRenderExt(
+				commandList, I32x2_zero(), I32x2_zero(), colors, (ListAttachmentInfo) { 0 }
+			));
+
 			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
 
 			SetPrimitiveBuffersCmd primitiveBuffers = (SetPrimitiveBuffersCmd) { 
@@ -387,15 +391,10 @@ void onManagerCreate(WindowManager *manager) {
 
 	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
 
-	twm->computeShaders = (List) { 0 };
-	twm->graphicsShaders = (List) { 0 };
-	twm->commandLists = List_createEmpty(sizeof(CommandListRef*));
-	twm->swapchains = List_createEmpty(sizeof(SwapchainRef*));
-
 	//Graphics test
 
 	GraphicsApplicationInfo applicationInfo = (GraphicsApplicationInfo) {
-		.name = CharString_createConstRefCStr("Rt core test"),
+		.name = CharString_createRefCStrConst("Rt core test"),
 		.version = GraphicsApplicationInfo_Version(0, 2, 0)
 	};
 
@@ -421,31 +420,32 @@ void onManagerCreate(WindowManager *manager) {
 
 	//Create pipelines
 
-	CharString shaders = CharString_createConstRefCStr("//rt_core/shaders");
+	CharString shaders = CharString_createRefCStrConst("//rt_core/shaders");
 	_gotoIfError(clean, File_loadVirtual(shaders, NULL));
 
 	//Compute pipelines
 
 	{
-		CharString path = CharString_createConstRefCStr("//rt_core/shaders/compute_test.main");
+		CharString path = CharString_createRefCStrConst("//rt_core/shaders/compute_test.main");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
 
-		path = CharString_createConstRefCStr("//rt_core/shaders/indirect_prepare.main");
+		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.main");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
 
-		path = CharString_createConstRefCStr("//rt_core/shaders/indirect_compute.main");
+		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.main");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[2]));
 
 		CharString nameArr[] = {
-			CharString_createConstRefCStr("Test compute pipeline"),
-			CharString_createConstRefCStr("Prepare indirect pipeline"),
-			CharString_createConstRefCStr("Indirect compute dispatch")
+			CharString_createRefCStrConst("Test compute pipeline"),
+			CharString_createRefCStrConst("Prepare indirect pipeline"),
+			CharString_createRefCStrConst("Indirect compute dispatch")
 		};
 
-		List binaries = (List) { 0 }, names = (List) { 0 };
+		ListBuffer binaries = (ListBuffer) { 0 };
+		ListCharString names = (ListCharString) { 0 };
 
-		_gotoIfError(clean, List_createConstRef((const U8*) &tempShaders[0], 3, sizeof(Buffer), &binaries));
-		_gotoIfError(clean, List_createConstRef((const U8*) &nameArr, 3, sizeof(nameArr[0]), &names));
+		_gotoIfError(clean, ListBuffer_createRefConst(tempShaders, 3, &binaries));
+		_gotoIfError(clean, ListCharString_createRefConst(nameArr, 3, &names));
 
 		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(twm->device, &binaries, names, &twm->computeShaders));
 
@@ -455,10 +455,10 @@ void onManagerCreate(WindowManager *manager) {
 	//Graphics pipelines
 
 	{
-		CharString path = CharString_createConstRefCStr("//rt_core/shaders/graphics_test.mainVS");
+		CharString path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.mainVS");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
 
-		path = CharString_createConstRefCStr("//rt_core/shaders/graphics_test.mainPS");
+		path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.mainPS");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
 
 		PipelineStage stageArr[2] = {
@@ -472,10 +472,8 @@ void onManagerCreate(WindowManager *manager) {
 			}
 		};
 
-		List stages = (List) { 0 };
-		_gotoIfError(clean, List_createConstRef(
-			(const U8*) stageArr, sizeof(stageArr) / sizeof(stageArr[0]), sizeof(stageArr[0]), &stages
-		));
+		ListPipelineStage stages = (ListPipelineStage) { 0 };
+		_gotoIfError(clean, ListPipelineStage_createRefConst(stageArr, sizeof(stageArr) / sizeof(stageArr[0]), &stages));
 
 		PipelineGraphicsInfo infoArr[1] = {
 			(PipelineGraphicsInfo) {
@@ -500,16 +498,12 @@ void onManagerCreate(WindowManager *manager) {
 			}
 		};
 
-		CharString nameArr[] = { CharString_createConstRefCStr("Test graphics pipeline") };
-		List infos = (List) { 0 }, names = (List) { 0 };
+		CharString nameArr[] = { CharString_createRefCStrConst("Test graphics pipeline") };
+		ListPipelineGraphicsInfo infos = (ListPipelineGraphicsInfo) { 0 };
+		ListCharString names = (ListCharString) { 0 };
 
-		_gotoIfError(clean, List_createConstRef(
-			(const U8*) infoArr, sizeof(infoArr) / sizeof(infoArr[0]), sizeof(infoArr[0]), &infos
-		));
-
-		_gotoIfError(clean, List_createConstRef(
-			(const U8*) &nameArr, sizeof(nameArr) / sizeof(nameArr[0]), sizeof(nameArr[0]), &names)
-		);
+		_gotoIfError(clean, ListPipelineGraphicsInfo_createRefConst(infoArr, sizeof(infoArr) / sizeof(infoArr[0]), &infos));
+		_gotoIfError(clean, ListCharString_createRefConst(nameArr, sizeof(nameArr) / sizeof(nameArr[0]), &names));
 
 		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesGraphics(
 			twm->device, &stages, &infos, names, &twm->graphicsShaders
@@ -583,30 +577,30 @@ void onManagerCreate(WindowManager *manager) {
 		9, 10, 7
 	};
 
-	Buffer vertexData = Buffer_createConstRef(vertexPos, sizeof(vertexPos));
-	CharString name = CharString_createConstRefCStr("Vertex position buffer");
+	Buffer vertexData = Buffer_createRefConst(vertexPos, sizeof(vertexPos));
+	CharString name = CharString_createRefCStrConst("Vertex position buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
 		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[0]
 	));
 
-	vertexData = Buffer_createConstRef(vertDat, sizeof(vertDat));
-	name = CharString_createConstRefCStr("Vertex attribute buffer");
+	vertexData = Buffer_createRefConst(vertDat, sizeof(vertDat));
+	name = CharString_createRefCStrConst("Vertex attribute buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
 		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[1]
 	));
 
-	Buffer indexData = Buffer_createConstRef(indexDat, sizeof(indexDat));
-	name = CharString_createConstRefCStr("Index buffer");
+	Buffer indexData = Buffer_createRefConst(indexDat, sizeof(indexDat));
+	name = CharString_createRefCStrConst("Index buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
 		twm->device, EDeviceBufferUsage_Index, name, &indexData, &twm->indexBuffer
 	));
 
-	name = CharString_createConstRefCStr("Test shader buffer");
+	name = CharString_createRefCStrConst("Test shader buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		twm->device, EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4), &twm->deviceBuffer
 	));
 
-	name = CharString_createConstRefCStr("Test indirect draw buffer");
+	name = CharString_createRefCStrConst("Test indirect draw buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		twm->device, 
 		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect, 
@@ -615,7 +609,7 @@ void onManagerCreate(WindowManager *manager) {
 		&twm->indirectDrawBuffer
 	));
 
-	name = CharString_createConstRefCStr("Test indirect dispatch buffer");
+	name = CharString_createRefCStrConst("Test indirect dispatch buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		twm->device, 
 		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect, 
@@ -656,11 +650,12 @@ void onManagerCreate(WindowManager *manager) {
 		}
 	};
 
-	List transitionArr = (List) { 0 }, depsArr = (List) { 0 };
-	_gotoIfError(clean, List_createConstRef((const U8*) transitions, 2, sizeof(Transition), &transitionArr));
+	ListTransition transitionArr = (ListTransition) { 0 };
+	ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
+	_gotoIfError(clean, ListTransition_createRefConst(transitions, 2, &transitionArr));
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
-		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(twm->computeShaders, 1)));
+		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)));
 		_gotoIfError(clean, CommandListRef_dispatch1D(commandList, 1));
 		_gotoIfError(clean, CommandListRef_endScope(commandList));
 	}
@@ -674,7 +669,7 @@ void onManagerCreate(WindowManager *manager) {
 		}
 	};
 
-	_gotoIfError(clean, List_createConstRef((const U8*) &deps, 1, sizeof(deps[0]), &depsArr));
+	_gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 1, &depsArr));
 
 	transitions[0] = (Transition) {
 		.resource = twm->deviceBuffer,
@@ -686,7 +681,7 @@ void onManagerCreate(WindowManager *manager) {
 	transitionArr.length = 1;
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
-		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, PipelineRef_at(twm->computeShaders, 2)));
+		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 2)));
 		_gotoIfError(clean, CommandListRef_dispatchIndirect(commandList, twm->indirectDispatchBuffer, 0));
 		_gotoIfError(clean, CommandListRef_endScope(commandList));
 	}
@@ -723,8 +718,8 @@ void onManagerDestroy(WindowManager *manager) {
 	GraphicsDeviceRef_dec(&twm->device);
 	GraphicsInstanceRef_dec(&twm->instance);
 
-	List_freex(&twm->commandLists);
-	List_freex(&twm->swapchains);
+	ListCommandListRef_freex(&twm->commandLists);
+	ListSwapchainRef_freex(&twm->swapchains);
 }
 
 int Program_run() {
@@ -746,7 +741,7 @@ int Program_run() {
 		I32x2_zero(), EResolution_get(EResolution_FHD),
 		I32x2_zero(), I32x2_zero(),
 		EWindowHint_AllowFullscreen, 
-		CharString_createConstRefCStr("Rt core test"),
+		CharString_createRefCStrConst("Rt core test"),
 		TestWindow_getCallbacks(),
 		EWindowFormat_BGRA8,
 		sizeof(TestWindow),
