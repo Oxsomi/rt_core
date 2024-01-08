@@ -404,7 +404,7 @@ void onResize(Window *w) {
 
 			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
 
-			_gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 1));		//Draw cube
+			_gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 64));		//Draw cube
 
 			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));

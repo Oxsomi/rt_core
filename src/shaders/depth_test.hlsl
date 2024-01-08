@@ -16,7 +16,7 @@ static const U32 quadIndices[] = {
 	00264		//Left
 };
 
-VSOutput mainVS(U32 id : SV_VertexID) {
+VSOutput mainVS(U32 id : SV_VertexID, U32 instanceId : SV_InstanceID) {
 
 	//Generate quad
 
@@ -33,7 +33,13 @@ VSOutput mainVS(U32 id : SV_VertexID) {
 	F32x3 mpos = ((index.xxx >> uint3(0, 2, 1)) & 1) - 0.5f;
 	F32x2 uv = float2(indexId & 1, indexId >> 1);
 
-	F32x4x4 m = F32x4x4_transform(0.xxx, 0.xxx, 1.xxx);		//pos, rot, scale
+	F32x3 rot = _time.xxx;
+	F32x3 scale = 0.25.xxx;
+	F32x3 pos = F32x3(0, (sin(_time) * 0.5 + 0.5) * 5, 0);
+
+	pos += F32x3((instanceId.xxx >> uint3(0, 2, 4)) & 3) / 3.0 * 2 - 1;
+
+	F32x4x4 m = F32x4x4_transform(pos, rot, scale);		//pos, rot, scale
 	F32x3 wpos = mul(F32x4(mpos, 1), m).xyz;
 
 	U32 viewProjMatBuf = getAppData1u(EResourceBinding_ViewProjMatrices);
