@@ -40,6 +40,7 @@
 #include "graphics/generic/command_list.h"
 #include "graphics/generic/pipeline.h"
 #include "graphics/generic/device_buffer.h"
+#include "graphics/generic/depth_stencil.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -56,7 +57,8 @@ typedef struct TestWindowManager {
 	DeviceBufferRef *indexBuffer;
 	DeviceBufferRef *indirectDrawBuffer;			//sizeof(DrawCallIndexed) * 2
 	DeviceBufferRef *indirectDispatchBuffer;		//sizeof(Dispatch) * 2
-	DeviceBufferRef *deviceBuffer;				//Constant F32x3 for animating color
+	DeviceBufferRef *deviceBuffer;					//Constant F32x3 for animating color
+	DeviceBufferRef *viewProjMatrices;				//F32x4x4 (view, proj, viewProj)
 
 	ListPipelineRef computeShaders;
 	ListPipelineRef graphicsShaders;
@@ -74,7 +76,8 @@ typedef struct TestWindow {
 
 	F64 time;
 	CommandListRef *commandList;
-	RefPtr *swapchain;
+	SwapchainRef *swapchain;
+	DepthStencilRef *depthStencil;
 
 } TestWindow;
 
@@ -197,14 +200,20 @@ void onManagerDraw(WindowManager *windowManager) {
 	DeviceBuffer *deviceBuf = DeviceBufferRef_ptr(twm->deviceBuffer);
 
 	typedef struct RuntimeData {
-		U32 constantColorRead, constantColorWrite, indirectDrawWrite, indirectDispatchWrite;
+		U32 constantColorRead, constantColorWrite;
+		U32 indirectDrawWrite, indirectDispatchWrite;
+		U32 viewProjMatricesWrite, viewProjMatricesRead;
 	} RuntimeData;
+
+	DeviceBuffer *viewProjMatrices = DeviceBufferRef_ptr(twm->viewProjMatrices);
 
 	RuntimeData data = (RuntimeData) {
 		.constantColorRead = deviceBuf->readHandle,
 		.constantColorWrite = deviceBuf->writeHandle,
 		.indirectDrawWrite = DeviceBufferRef_ptr(twm->indirectDrawBuffer)->writeHandle,
 		.indirectDispatchWrite = DeviceBufferRef_ptr(twm->indirectDispatchBuffer)->writeHandle,
+		.viewProjMatricesWrite = viewProjMatrices->writeHandle,
+		.viewProjMatricesRead = viewProjMatrices->readHandle
 	};
 
 	Buffer runtimeData = Buffer_createRefConst((const U32*)&data, sizeof(data));
@@ -236,6 +245,18 @@ void onResize(Window *w) {
 
 	_gotoIfError(clean, Swapchain_resize(SwapchainRef_ptr(swapchain)));
 
+	//Resize depth stencil
+
+	if(tw->depthStencil)
+		DepthStencilRef_dec(&tw->depthStencil);
+
+	_gotoIfError(clean, GraphicsDeviceRef_createDepthStencil(
+		twm->device, 
+		w->size, EDepthStencilFormat_D16, false, 
+		CharString_createRefCStrConst("Test depth stencil"), 
+		&tw->depthStencil
+	));
+
 	//Record commands
 
 	_gotoIfError(clean, CommandListRef_begin(commandList, true, U64_MAX));
@@ -245,7 +266,8 @@ void onResize(Window *w) {
 		typedef enum EScopes {
 
 			EScopes_GraphicsTest,
-			EScopes_ComputeTest
+			EScopes_ComputeTest,
+			EScopes_GraphicsDepthTest
 
 		} EScopes;
 
@@ -308,17 +330,18 @@ void onResize(Window *w) {
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
 				.image = swapchain,
-				.load = ELoadAttachmentType_Preserve,
-				.color = (ClearColor) { .colorf = {  1, 0, 0, 1 } }
+				.load = ELoadAttachmentType_Preserve
 			};
 
 			ListAttachmentInfo colors = (ListAttachmentInfo) { 0 };
 			_gotoIfError(clean, ListAttachmentInfo_createRefConst(&attachmentInfo, 1, &colors));
 
-			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 0)));
+			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(
+				commandList, ListPipelineRef_at(twm->graphicsShaders, 0)
+			));
 
 			_gotoIfError(clean, CommandListRef_startRenderExt(
-				commandList, I32x2_zero(), I32x2_zero(), colors, (ListAttachmentInfo) { 0 }
+				commandList, I32x2_zero(), I32x2_zero(), colors, (AttachmentInfo) { 0 }, (AttachmentInfo) { 0 }
 			));
 
 			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
@@ -332,6 +355,56 @@ void onResize(Window *w) {
 			_gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers));
 			_gotoIfError(clean, CommandListRef_drawIndexed(commandList, 6, 1));
 			_gotoIfError(clean, CommandListRef_drawIndirect(commandList, twm->indirectDrawBuffer, 0, 0, 2, true));
+
+			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
+			_gotoIfError(clean, CommandListRef_endScope(commandList));
+		}
+
+		//Test graphics pipeline with depth stencil
+
+		deps[0] = (CommandScopeDependency) {
+			.type = ECommandScopeDependencyType_Unconditional, 
+			.id = EScopes_GraphicsTest
+		};
+
+		depsArr.length = 1;
+
+		transitions[0] = (Transition) {
+			.resource = twm->viewProjMatrices,
+			.range = { .buffer = (BufferRange) { 0 } },
+			.stage = EPipelineStage_Vertex,
+			.isWrite = false
+		};
+
+		transitionArr.length = 1;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsDepthTest, depsArr).genericError) {
+
+			AttachmentInfo attachmentInfo = (AttachmentInfo) {
+				.image = swapchain,
+				.load = ELoadAttachmentType_Preserve
+			};
+
+			ListAttachmentInfo colors = (ListAttachmentInfo) { 0 };
+			_gotoIfError(clean, ListAttachmentInfo_createRefConst(&attachmentInfo, 1, &colors));
+
+			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(
+				commandList, ListPipelineRef_at(twm->graphicsShaders, 1)
+			));
+
+			AttachmentInfo depth = (AttachmentInfo) {
+				.image = tw->depthStencil,
+				.load = ELoadAttachmentType_Clear,
+				.color = (ClearColor) { .colorf = { 0 } }
+			};
+
+			_gotoIfError(clean, CommandListRef_startRenderExt(
+				commandList, I32x2_zero(), I32x2_zero(), colors, depth, (AttachmentInfo) { 0 }
+			));
+
+			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
+
+			_gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 1));		//Draw cube
 
 			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
@@ -368,7 +441,8 @@ clean:
 
 void onDestroy(Window *w) {
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
-	RefPtr_dec(&tw->swapchain);
+	SwapchainRef_dec(&tw->swapchain);
+	DepthStencilRef_dec(&tw->depthStencil);
 	CommandListRef_dec(&tw->commandList);
 }
 
@@ -461,21 +535,40 @@ void onManagerCreate(WindowManager *manager) {
 		path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.mainPS");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
 
-		PipelineStage stageArr[2] = {
+		path = CharString_createRefCStrConst("//rt_core/shaders/depth_test.mainVS");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[2]));
+
+		PipelineStage stageArr[4] = {
+
+			//Pipeline without depth stencil
+
 			(PipelineStage) {
 				.stageType = EPipelineStage_Vertex,
 				.shaderBinary = tempShaders[0]
 			},
+
 			(PipelineStage) {
 				.stageType = EPipelineStage_Pixel,
 				.shaderBinary = tempShaders[1]
+			},
+
+			//Pipeline with depth (but still the same pixel shader)
+
+			(PipelineStage) {
+				.stageType = EPipelineStage_Vertex,
+				.shaderBinary = tempShaders[2]
+			},
+
+			(PipelineStage) {
+				.stageType = EPipelineStage_Pixel,
+				.shaderBinary = Buffer_createRefFromBuffer(tempShaders[1], true)
 			}
 		};
 
 		ListPipelineStage stages = (ListPipelineStage) { 0 };
 		_gotoIfError(clean, ListPipelineStage_createRefConst(stageArr, sizeof(stageArr) / sizeof(stageArr[0]), &stages));
 
-		PipelineGraphicsInfo infoArr[1] = {
+		PipelineGraphicsInfo infoArr[] = {
 			(PipelineGraphicsInfo) {
 				.stageCount = 2,
 				.vertexLayout = {
@@ -495,10 +588,21 @@ void onManagerCreate(WindowManager *manager) {
 				},
 				.attachmentCountExt = 1,
 				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 }
+			},
+			(PipelineGraphicsInfo) {
+				.depthStencil = (DepthStencilState) { .flags = EDepthStencilFlags_DepthWrite },
+				.stageCount = 2,
+				.attachmentCountExt = 1,
+				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
+				.depthFormatExt = EDepthStencilFormat_D16
 			}
 		};
 
-		CharString nameArr[] = { CharString_createRefCStrConst("Test graphics pipeline") };
+		CharString nameArr[] = { 
+			CharString_createRefCStrConst("Test graphics pipeline"),
+			CharString_createRefCStrConst("Test graphics depth pipeline")
+		};
+
 		ListPipelineGraphicsInfo infos = (ListPipelineGraphicsInfo) { 0 };
 		ListCharString names = (ListCharString) { 0 };
 
@@ -509,7 +613,7 @@ void onManagerCreate(WindowManager *manager) {
 			twm->device, &stages, &infos, names, &twm->graphicsShaders
 		));
 
-		tempShaders[0] = tempShaders[1] = Buffer_createNull();
+		tempShaders[0] = tempShaders[1] = tempShaders[2] = Buffer_createNull();
 	}
 
 	//Mesh data
@@ -519,9 +623,9 @@ void onManagerCreate(WindowManager *manager) {
 		//Test quad in center
 
 		(VertexPosBuffer) { { F32_castF16(-0.5f),	F32_castF16(-0.5f) } },
-		(VertexPosBuffer) { { F32_castF16(0.5f),	F32_castF16(-0.5f) } },
-		(VertexPosBuffer) { { F32_castF16(0.5f),	F32_castF16(0.5f) } },
-		(VertexPosBuffer) { { F32_castF16(-0.5f),	F32_castF16(0.5f) } },
+		(VertexPosBuffer) { { F32_castF16(-0.25f),	F32_castF16(-0.5f) } },
+		(VertexPosBuffer) { { F32_castF16(-0.25f),	F32_castF16(-0.25f) } },
+		(VertexPosBuffer) { { F32_castF16(-0.5f),	F32_castF16(-0.25f) } },
 
 		//Test tri with indirect draw
 
@@ -600,6 +704,13 @@ void onManagerCreate(WindowManager *manager) {
 		twm->device, EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4), &twm->deviceBuffer
 	));
 
+	name = CharString_createRefCStrConst("View proj matrices buffer");
+	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
+		twm->device, 
+		EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4) * 4 * 3, 
+		&twm->viewProjMatrices
+	));
+
 	name = CharString_createRefCStrConst("Test indirect draw buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		twm->device, 
@@ -647,12 +758,18 @@ void onManagerCreate(WindowManager *manager) {
 			.range = { .buffer = (BufferRange) { 0 } },
 			.stage = EPipelineStage_Compute,
 			.isWrite = true
+		},
+		(Transition) {
+			.resource = twm->viewProjMatrices,
+			.range = { .buffer = (BufferRange) { 0 } },
+			.stage = EPipelineStage_Compute,
+			.isWrite = true
 		}
 	};
 
 	ListTransition transitionArr = (ListTransition) { 0 };
 	ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
-	_gotoIfError(clean, ListTransition_createRefConst(transitions, 2, &transitionArr));
+	_gotoIfError(clean, ListTransition_createRefConst(transitions, 3, &transitionArr));
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
 		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)));
@@ -706,6 +823,7 @@ void onManagerDestroy(WindowManager *manager) {
 	DeviceBufferRef_dec(&twm->vertexBuffers[1]);
 	DeviceBufferRef_dec(&twm->indexBuffer);
 	DeviceBufferRef_dec(&twm->deviceBuffer);
+	DeviceBufferRef_dec(&twm->viewProjMatrices);
 	DeviceBufferRef_dec(&twm->indirectDrawBuffer);
 	DeviceBufferRef_dec(&twm->indirectDispatchBuffer);
 	PipelineRef_decAll(&twm->graphicsShaders);
