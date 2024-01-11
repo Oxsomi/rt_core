@@ -20,6 +20,7 @@
 
 #include "platforms/ext/listx_impl.h"
 #include "types/buffer.h"
+#include "types/string.h"
 #include "types/time.h"
 #include "types/flp.h"
 #include "formats/bmp.h"
@@ -41,6 +42,7 @@
 #include "graphics/generic/pipeline.h"
 #include "graphics/generic/device_buffer.h"
 #include "graphics/generic/depth_stencil.h"
+#include "graphics/generic/sampler.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -64,6 +66,8 @@ typedef struct TestWindowManager {
 	ListPipelineRef graphicsShaders;
 	ListCommandListRef commandLists;
 	ListSwapchainRef swapchains;
+
+	SamplerRef *linear, *nearest, *anisotropic;
 
 	U64 framesSinceLastSecond;
 	F64 timeSinceLastSecond, time;
@@ -492,6 +496,22 @@ void onManagerCreate(WindowManager *manager) {
 
 	_gotoIfError(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, isVerbose, &twm->device));
 
+	//Create samplers
+
+	CharString samplerNames[] = {
+		CharString_createRefCStrConst("Nearest sampler"),
+		CharString_createRefCStrConst("Linear sampler"),
+		CharString_createRefCStrConst("Anistropic sampler")
+	};
+
+	SamplerInfo nearestSampler = (SamplerInfo) { .filter = ESamplerFilterMode_Nearest };
+	SamplerInfo linearSampler = (SamplerInfo) { .filter = ESamplerFilterMode_Linear };
+	SamplerInfo anisotropicSampler = (SamplerInfo) { .filter = ESamplerFilterMode_Linear, .aniso = 16 };
+
+	_gotoIfError(clean, GraphicsDeviceRef_createSampler(twm->device, nearestSampler, samplerNames[0], &twm->nearest));
+	_gotoIfError(clean, GraphicsDeviceRef_createSampler(twm->device, linearSampler, samplerNames[1], &twm->linear));
+	_gotoIfError(clean, GraphicsDeviceRef_createSampler(twm->device, anisotropicSampler, samplerNames[2], &twm->anisotropic));
+
 	//Create pipelines
 
 	CharString shaders = CharString_createRefCStrConst("//rt_core/shaders");
@@ -830,14 +850,18 @@ void onManagerDestroy(WindowManager *manager) {
 	PipelineRef_decAll(&twm->computeShaders);
 	CommandListRef_dec(&twm->prepCommandList);
 
-	//Wait for device and then delete device & instance
+	ListCommandListRef_freex(&twm->commandLists);
+	ListSwapchainRef_freex(&twm->swapchains);
+
+	SamplerRef_dec(&twm->nearest);
+	SamplerRef_dec(&twm->linear);
+	SamplerRef_dec(&twm->anisotropic);
+
+	//Wait for device and then delete device & instance (this also destroys all objects)
 
 	GraphicsDeviceRef_wait(twm->device);
 	GraphicsDeviceRef_dec(&twm->device);
 	GraphicsInstanceRef_dec(&twm->instance);
-
-	ListCommandListRef_freex(&twm->commandLists);
-	ListSwapchainRef_freex(&twm->swapchains);
 }
 
 int Program_run() {
