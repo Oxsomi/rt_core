@@ -43,6 +43,7 @@
 #include "graphics/generic/device_buffer.h"
 #include "graphics/generic/depth_stencil.h"
 #include "graphics/generic/sampler.h"
+#include "graphics/generic/render_texture.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -70,7 +71,11 @@ typedef struct TestWindowManager {
 	SamplerRef *linear, *nearest, *anisotropic;
 
 	U64 framesSinceLastSecond;
-	F64 timeSinceLastSecond, time;
+	F64 timeSinceLastSecond, time, timeSinceLastRender, realTime;
+
+	F32 timeStep;
+	Bool renderVirtual;
+	U8 pad[3];
 
 } TestWindowManager;
 
@@ -80,8 +85,9 @@ typedef struct TestWindow {
 
 	F64 time;
 	CommandListRef *commandList;
-	SwapchainRef *swapchain;
+	RefPtr *swapchain;					//Can be either SwapchainRef (non virtual) or RenderTextureRef (virtual)
 	DepthStencilRef *depthStencil;
+	RenderTextureRef *renderTextureTest;
 
 } TestWindow;
 
@@ -114,6 +120,14 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
 		switch ((EKey) handle) {
 
+			//F9 we pause
+
+			case EKey_F9: {
+				F32 *ts = &((TestWindowManager*)w->owner->extendedData.ptr)->timeStep;
+				*ts = *ts == 0 ? 1.f : 0;
+				break;
+			}
+
 			//F11 we toggle full screen
 
 			case EKey_F11:
@@ -142,18 +156,25 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 	}
 }
 
+F32 targetFps = 60;		//Only if virtual window (indicates timestep)
+
 void onUpdate(Window *w, F64 dt) {
-	((TestWindow*)w->extendedData.ptr)->time += dt;
+
+	if(w->type == EWindowType_Physical)
+		((TestWindow*)w->extendedData.ptr)->time += dt;
+
+	else ((TestWindow*)w->extendedData.ptr)->time += 1 / targetFps;
 }
 
 void onManagerUpdate(WindowManager *windowManager, F64 dt) {
 
 	TestWindowManager *tw = (TestWindowManager*) windowManager->extendedData.ptr;
 
-	F64 prevTime = tw->time;
-	tw->time += dt;
+	F64 prevTime = tw->realTime;
+	tw->time += (tw->renderVirtual ? 1 / targetFps : dt) * tw->timeStep;		//Time for rendering
+	tw->realTime += dt;
 
-	if(F64_floor(prevTime) != F64_floor(tw->time)) {
+	if(F64_floor(prevTime) != F64_floor(tw->realTime)) {
 
 		Log_debugLnx("%u fps", (U32)F64_round(tw->framesSinceLastSecond / tw->timeSinceLastSecond));
 
@@ -221,7 +242,12 @@ void onManagerDraw(WindowManager *windowManager) {
 	};
 
 	Buffer runtimeData = Buffer_createRefConst((const U32*)&data, sizeof(data));
-	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(twm->device, twm->commandLists, twm->swapchains, runtimeData));
+	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(
+		twm->device, twm->commandLists, twm->swapchains, runtimeData,
+		(F32)(twm->time - twm->timeSinceLastRender), (F32)twm->time
+	));
+
+	twm->timeSinceLastRender = twm->time;
 
 clean:
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
@@ -232,7 +258,7 @@ void onResize(Window *w) {
 	TestWindowManager *twm = (TestWindowManager*) w->owner->extendedData.ptr;
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	CommandListRef *commandList = tw->commandList;
-	SwapchainRef *swapchain = tw->swapchain;
+	RefPtr *swapchain = tw->swapchain;
 
 	Error err = Error_none();
 	Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
@@ -247,7 +273,23 @@ void onResize(Window *w) {
 		return;
 	}
 
-	_gotoIfError(clean, Swapchain_resize(SwapchainRef_ptr(swapchain)));
+	if(w->type != EWindowType_Virtual)
+		_gotoIfError(clean, Swapchain_resize(SwapchainRef_ptr(swapchain)))
+
+	else {
+
+		if(swapchain)
+			RefPtr_dec(&tw->swapchain);
+
+		_gotoIfError(clean, GraphicsDeviceRef_createRenderTexture(
+			twm->device, 
+			ERenderTextureType_2D, I32x4_fromI32x2(w->size), ETextureFormatId_BGRA8, ERenderTextureUsage_ShaderRW, 
+			CharString_createRefCStrConst("Virtual window backbuffer"),
+			&tw->swapchain
+		));
+
+		swapchain = tw->swapchain;
+	}
 
 	//Resize depth stencil
 
@@ -259,6 +301,18 @@ void onResize(Window *w) {
 		w->size, EDepthStencilFormat_D16, false, 
 		CharString_createRefCStrConst("Test depth stencil"), 
 		&tw->depthStencil
+	));
+
+	//Resize render texture
+
+	if(tw->renderTextureTest)
+		RenderTextureRef_dec(&tw->renderTextureTest);
+
+	_gotoIfError(clean, GraphicsDeviceRef_createRenderTexture(
+		twm->device, 
+		ERenderTextureType_2D, I32x4_fromI32x2(w->size), ETextureFormatId_BGRA8, ERenderTextureUsage_None, 
+		CharString_createRefCStrConst("Test render texture"),
+		&tw->renderTextureTest
 	));
 
 	//Record commands
@@ -300,15 +354,14 @@ void onResize(Window *w) {
 			commandList, transitionArr, EScopes_ComputeTest, (ListCommandScopeDependency) { 0 }
 		).genericError) {
 
-			Swapchain *swapchainPtr = SwapchainRef_ptr(swapchain);
+			I32x2 size = 
+				swapchain->typeId == EGraphicsTypeId_Swapchain ? SwapchainRef_ptr(swapchain)->size : 
+				I32x2_fromI32x4(RenderTextureRef_ptr(swapchain)->size);
 
-			U32 tilesX = (U32)(I32x2_x(swapchainPtr->size) + 15) >> 4;
-			U32 tilesY = (U32)(I32x2_y(swapchainPtr->size) + 15) >> 4;
-
-			tilesX; tilesY;
+			size = I32x2_add(size, I32x2_xx2(15));		//Align to 16 (shift comes later)
 
 			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)));
-			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, tilesX, tilesY));
+			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, I32x2_x(size) >> 4, I32x2_y(size) >> 4));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
 
@@ -392,9 +445,9 @@ void onResize(Window *w) {
 			ListAttachmentInfo colors = (ListAttachmentInfo) { 0 };
 			_gotoIfError(clean, ListAttachmentInfo_createRefConst(&attachmentInfo, 1, &colors));
 
-			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(
-				commandList, ListPipelineRef_at(twm->graphicsShaders, 1)
-			));
+			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 1)));
+
+			//First swapchain
 
 			AttachmentInfo depth = (AttachmentInfo) {
 				.image = tw->depthStencil,
@@ -407,10 +460,24 @@ void onResize(Window *w) {
 			));
 
 			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
-
-			_gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 64));		//Draw cube
-
+			_gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 64));		//Draw cubes
 			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
+
+			//Then, custom render target. Re-use same depth stencil.
+			//Clear to blue
+
+			attachmentInfo.image = tw->renderTextureTest;
+			attachmentInfo.load = ELoadAttachmentType_Clear;
+			attachmentInfo.color.colorf[2] = attachmentInfo.color.colorf[3] = 1;
+
+			_gotoIfError(clean, CommandListRef_startRenderExt(
+				commandList, I32x2_zero(), I32x2_zero(), colors, depth, (AttachmentInfo) { 0 }
+			));
+
+			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
+			_gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 64));		//Draw cubes
+			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
+
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
 	}
@@ -428,15 +495,9 @@ void onCreate(Window *w) {
 	Error err = Error_none();
 	_gotoIfError(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &tw->commandList));
 
-	if(w->type == EWindowType_Physical) {
-		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w, .usage = ESwapchainUsage_AllowCompute };
+	if(w->type != EWindowType_Virtual) {
+		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w, .usage = ESwapchainUsage_ShaderWrite };
 		_gotoIfError(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, &tw->swapchain));
-	}
-
-	//TODO: RenderTarget into swapchain
-
-	else {
-
 	}
 
 clean:
@@ -445,8 +506,9 @@ clean:
 
 void onDestroy(Window *w) {
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
-	SwapchainRef_dec(&tw->swapchain);
+	RefPtr_dec(&tw->swapchain);
 	DepthStencilRef_dec(&tw->depthStencil);
+	RenderTextureRef_dec(&tw->renderTextureTest);
 	CommandListRef_dec(&tw->commandList);
 }
 
@@ -462,12 +524,16 @@ typedef struct VertexDataBuffer {
 
 } VertexDataBuffer;
 
+Bool renderVirtual = false;		//Whether or not there's a physical swapchain
+
 void onManagerCreate(WindowManager *manager) {
 
 	Error err = Error_none();
 	Buffer tempShaders[3] = { 0 };
 
 	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
+	twm->timeStep = 1;
+	twm->renderVirtual = renderVirtual;			
 
 	//Graphics test
 
@@ -879,7 +945,7 @@ int Program_run() {
 
 	Window *wind = NULL;
 	_gotoIfError(clean, WindowManager_createWindow(
-		&manager, EWindowType_Physical,
+		&manager, renderVirtual ? EWindowType_Virtual : EWindowType_Physical,
 		I32x2_zero(), EResolution_get(EResolution_FHD),
 		I32x2_zero(), I32x2_zero(),
 		EWindowHint_AllowFullscreen, 
