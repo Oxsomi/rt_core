@@ -87,7 +87,7 @@ typedef struct TestWindow {
 	CommandListRef *commandList;
 	RefPtr *swapchain;					//Can be either SwapchainRef (non virtual) or RenderTextureRef (virtual)
 	DepthStencilRef *depthStencil;
-	RenderTextureRef *renderTextureTest;
+	RenderTextureRef *renderTextureBackup;
 
 } TestWindow;
 
@@ -305,14 +305,14 @@ void onResize(Window *w) {
 
 	//Resize render texture
 
-	if(tw->renderTextureTest)
-		RenderTextureRef_dec(&tw->renderTextureTest);
+	if(tw->renderTextureBackup)
+		RenderTextureRef_dec(&tw->renderTextureBackup);
 
 	_gotoIfError(clean, GraphicsDeviceRef_createRenderTexture(
 		twm->device, 
 		ERenderTextureType_2D, I32x4_fromI32x2(w->size), ETextureFormatId_BGRA8, ERenderTextureUsage_None, 
-		CharString_createRefCStrConst("Test render texture"),
-		&tw->renderTextureTest
+		CharString_createRefCStrConst("Backup render texture"),
+		&tw->renderTextureBackup
 	));
 
 	//Record commands
@@ -325,7 +325,8 @@ void onResize(Window *w) {
 
 			EScopes_GraphicsTest,
 			EScopes_ComputeTest,
-			EScopes_GraphicsDepthTest
+			EScopes_GraphicsDepthTest,
+			EScopes_CopyToBackup			//Keep backup image for easy pullback
 
 		} EScopes;
 
@@ -463,20 +464,24 @@ void onResize(Window *w) {
 			_gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 64));		//Draw cubes
 			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
 
-			//Then, custom render target. Re-use same depth stencil.
-			//Clear to blue
+			_gotoIfError(clean, CommandListRef_endScope(commandList));
+		}
 
-			attachmentInfo.image = tw->renderTextureTest;
-			attachmentInfo.load = ELoadAttachmentType_Clear;
-			attachmentInfo.color.colorf[2] = attachmentInfo.color.colorf[3] = 1;
+		//Copy into backup render target for later copy
 
-			_gotoIfError(clean, CommandListRef_startRenderExt(
-				commandList, I32x2_zero(), I32x2_zero(), colors, depth, (AttachmentInfo) { 0 }
+		deps[0] = (CommandScopeDependency) {
+			.type = ECommandScopeDependencyType_Unconditional, 
+			.id = EScopes_GraphicsDepthTest
+		};
+
+		depsArr.length = 1;
+		transitionArr.length = 0;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_CopyToBackup, depsArr).genericError) {
+
+			_gotoIfError(clean, CommandListRef_copyImage(
+				commandList, tw->swapchain, tw->renderTextureBackup, ECopyType_All, (CopyImageRegion) { 0 }
 			));
-
-			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
-			_gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 64));		//Draw cubes
-			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
 
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
@@ -508,7 +513,7 @@ void onDestroy(Window *w) {
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	RefPtr_dec(&tw->swapchain);
 	DepthStencilRef_dec(&tw->depthStencil);
-	RenderTextureRef_dec(&tw->renderTextureTest);
+	RenderTextureRef_dec(&tw->renderTextureBackup);
 	CommandListRef_dec(&tw->commandList);
 }
 
