@@ -263,6 +263,8 @@ void onResize(Window *w) {
 	Error err = Error_none();
 	Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
 
+	_gotoIfError(clean, GraphicsDeviceRef_wait(twm->device));
+
 	if(!hasSwapchain) {
 
 		_gotoIfError(cleanTemp, CommandListRef_begin(commandList, true, U64_MAX));
@@ -274,7 +276,7 @@ void onResize(Window *w) {
 	}
 
 	if(w->type != EWindowType_Virtual)
-		_gotoIfError(clean, Swapchain_resize(SwapchainRef_ptr(swapchain)))
+		_gotoIfError(clean, SwapchainRef_resize(swapchain))
 
 	else {
 
