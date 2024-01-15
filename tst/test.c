@@ -87,7 +87,7 @@ typedef struct TestWindow {
 	CommandListRef *commandList;
 	RefPtr *swapchain;					//Can be either SwapchainRef (non virtual) or RenderTextureRef (virtual)
 	DepthStencilRef *depthStencil;
-	RenderTextureRef *renderTextureBackup;
+	RenderTextureRef *msaaTexture;
 
 } TestWindow;
 
@@ -258,12 +258,12 @@ void onResize(Window *w) {
 	TestWindowManager *twm = (TestWindowManager*) w->owner->extendedData.ptr;
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	CommandListRef *commandList = tw->commandList;
-	RefPtr *swapchain = tw->swapchain;
 
 	Error err = Error_none();
 	Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
 
-	_gotoIfError(clean, GraphicsDeviceRef_wait(twm->device));
+	if(w->type != EWindowType_Virtual)
+		_gotoIfError(clean, GraphicsDeviceRef_wait(twm->device));
 
 	if(!hasSwapchain) {
 
@@ -276,24 +276,9 @@ void onResize(Window *w) {
 	}
 
 	if(w->type != EWindowType_Virtual)
-		_gotoIfError(clean, SwapchainRef_resize(swapchain))
+		_gotoIfError(clean, SwapchainRef_resize(tw->swapchain))
 
-	else {
-
-		if(swapchain)
-			RefPtr_dec(&tw->swapchain);
-
-		_gotoIfError(clean, GraphicsDeviceRef_createRenderTexture(
-			twm->device, 
-			ERenderTextureType_2D, I32x4_fromI32x2(w->size), ETextureFormatId_BGRA8, ERenderTextureUsage_ShaderRW, 
-			CharString_createRefCStrConst("Virtual window backbuffer"),
-			&tw->swapchain
-		));
-
-		swapchain = tw->swapchain;
-	}
-
-	//Resize depth stencil
+	//Resize depth stencil and MSAA textures
 
 	if(tw->depthStencil)
 		DepthStencilRef_dec(&tw->depthStencil);
@@ -301,20 +286,20 @@ void onResize(Window *w) {
 	_gotoIfError(clean, GraphicsDeviceRef_createDepthStencil(
 		twm->device, 
 		w->size, EDepthStencilFormat_D16, false, 
+		EMSAASamples_x4,
 		CharString_createRefCStrConst("Test depth stencil"), 
 		&tw->depthStencil
 	));
 
-	//Resize render texture
-
-	if(tw->renderTextureBackup)
-		RenderTextureRef_dec(&tw->renderTextureBackup);
+	if(tw->msaaTexture)
+		RefPtr_dec(&tw->msaaTexture);
 
 	_gotoIfError(clean, GraphicsDeviceRef_createRenderTexture(
 		twm->device, 
 		ERenderTextureType_2D, I32x4_fromI32x2(w->size), ETextureFormatId_BGRA8, ERenderTextureUsage_None, 
-		CharString_createRefCStrConst("Backup render texture"),
-		&tw->renderTextureBackup
+		EMSAASamples_x4,
+		CharString_createRefCStrConst("MSAA x4 render texture"),
+		&tw->msaaTexture
 	));
 
 	//Record commands
@@ -324,58 +309,20 @@ void onResize(Window *w) {
 	if(hasSwapchain) {
 
 		typedef enum EScopes {
-
-			EScopes_GraphicsTest,
-			EScopes_ComputeTest,
-			EScopes_GraphicsDepthTest,
-			EScopes_CopyToBackup			//Keep backup image for easy pullback
-
+			EScopes_GraphicsTest
 		} EScopes;
 
 		//Prepare 2 indirect draw calls and update constant color
 
-		Transition transitions[1] = { 0 };
-		CommandScopeDependency deps[1] = { 0};
+		Transition transitions[2] = { 0 };
+		CommandScopeDependency deps[2] = { 0 };
 
 		ListTransition transitionArr = (ListTransition) { 0 };
 		ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
-		_gotoIfError(clean, ListTransition_createRefConst(transitions, 1, &transitionArr));
-		_gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 1, &depsArr));
-
-		//Test compute pipeline
-
-		transitions[0] = (Transition) {
-			.resource = swapchain,
-			.range = { .image = (ImageRange) { 0 } },
-			.stage = EPipelineStage_Compute,
-			.isWrite = true
-		};
-
-		transitionArr.length = 1;
-
-		if (!CommandListRef_startScope(
-			commandList, transitionArr, EScopes_ComputeTest, (ListCommandScopeDependency) { 0 }
-		).genericError) {
-
-			I32x2 size = 
-				swapchain->typeId == EGraphicsTypeId_Swapchain ? SwapchainRef_ptr(swapchain)->size : 
-				I32x2_fromI32x4(RenderTextureRef_ptr(swapchain)->size);
-
-			size = I32x2_add(size, I32x2_xx2(15));		//Align to 16 (shift comes later)
-
-			_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)));
-			_gotoIfError(clean, CommandListRef_dispatch2D(commandList, I32x2_x(size) >> 4, I32x2_y(size) >> 4));
-			_gotoIfError(clean, CommandListRef_endScope(commandList));
-		}
+		_gotoIfError(clean, ListTransition_createRefConst(transitions, 2, &transitionArr));
+		_gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 2, &depsArr));
 
 		//Test graphics pipeline
-
-		deps[0] = (CommandScopeDependency) {
-			.type = ECommandScopeDependencyType_Unconditional, 
-			.id = EScopes_ComputeTest
-		};
-
-		depsArr.length = 1;
 
 		transitions[0] = (Transition) {
 			.resource = twm->deviceBuffer,
@@ -384,27 +331,49 @@ void onResize(Window *w) {
 			.isWrite = false
 		};
 
-		transitionArr.length = 1;
+		transitions[1] = (Transition) {
+			.resource = twm->viewProjMatrices,
+			.range = { .buffer = (BufferRange) { 0 } },
+			.stage = EPipelineStage_Vertex,
+			.isWrite = false
+		};
+
+		depsArr.length = 0;
+		transitionArr.length = 2;
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
-				.image = swapchain,
-				.load = ELoadAttachmentType_Preserve
+				.image = tw->msaaTexture,
+				.unusedAfterRender = true,
+				.load = ELoadAttachmentType_Clear,
+				.color = { .colorf = { 0.25f, 0.5f, 1, 1 } },
+				.resolveImage = tw->swapchain
+			};
+
+			AttachmentInfo depth = (AttachmentInfo) {
+				.image = tw->depthStencil,
+				.unusedAfterRender = true,
+				.load = ELoadAttachmentType_Clear,
+				.color = (ClearColor) { .colorf = { 0 } }
 			};
 
 			ListAttachmentInfo colors = (ListAttachmentInfo) { 0 };
 			_gotoIfError(clean, ListAttachmentInfo_createRefConst(&attachmentInfo, 1, &colors));
 
-			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(
-				commandList, ListPipelineRef_at(twm->graphicsShaders, 0)
-			));
+			//Start render
 
 			_gotoIfError(clean, CommandListRef_startRenderExt(
-				commandList, I32x2_zero(), I32x2_zero(), colors, (AttachmentInfo) { 0 }, (AttachmentInfo) { 0 }
+				commandList, I32x2_zero(), I32x2_zero(), colors, depth, (AttachmentInfo) { 0 }
 			));
 
 			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
+
+			//Draw without depth
+
+			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(
+				commandList, ListPipelineRef_at(twm->graphicsShaders, 0)
+			));
 
 			SetPrimitiveBuffersCmd primitiveBuffers = (SetPrimitiveBuffersCmd) { 
 				.vertexBuffers = { twm->vertexBuffers[0], twm->vertexBuffers[1] },
@@ -416,75 +385,13 @@ void onResize(Window *w) {
 			_gotoIfError(clean, CommandListRef_drawIndexed(commandList, 6, 1));
 			_gotoIfError(clean, CommandListRef_drawIndirect(commandList, twm->indirectDrawBuffer, 0, 0, 2, true));
 
-			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
-			_gotoIfError(clean, CommandListRef_endScope(commandList));
-		}
-
-		//Test graphics pipeline with depth stencil
-
-		deps[0] = (CommandScopeDependency) {
-			.type = ECommandScopeDependencyType_Unconditional, 
-			.id = EScopes_GraphicsTest
-		};
-
-		depsArr.length = 1;
-
-		transitions[0] = (Transition) {
-			.resource = twm->viewProjMatrices,
-			.range = { .buffer = (BufferRange) { 0 } },
-			.stage = EPipelineStage_Vertex,
-			.isWrite = false
-		};
-
-		transitionArr.length = 1;
-
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsDepthTest, depsArr).genericError) {
-
-			AttachmentInfo attachmentInfo = (AttachmentInfo) {
-				.image = swapchain,
-				.load = ELoadAttachmentType_Preserve
-			};
-
-			ListAttachmentInfo colors = (ListAttachmentInfo) { 0 };
-			_gotoIfError(clean, ListAttachmentInfo_createRefConst(&attachmentInfo, 1, &colors));
+			//Draw with depth
 
 			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 1)));
 
-			//First swapchain
-
-			AttachmentInfo depth = (AttachmentInfo) {
-				.image = tw->depthStencil,
-				.load = ELoadAttachmentType_Clear,
-				.color = (ClearColor) { .colorf = { 0 } }
-			};
-
-			_gotoIfError(clean, CommandListRef_startRenderExt(
-				commandList, I32x2_zero(), I32x2_zero(), colors, depth, (AttachmentInfo) { 0 }
-			));
-
-			_gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()));
 			_gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 64));		//Draw cubes
+
 			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
-
-			_gotoIfError(clean, CommandListRef_endScope(commandList));
-		}
-
-		//Copy into backup render target for later copy
-
-		deps[0] = (CommandScopeDependency) {
-			.type = ECommandScopeDependencyType_Unconditional, 
-			.id = EScopes_GraphicsDepthTest
-		};
-
-		depsArr.length = 1;
-		transitionArr.length = 0;
-
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_CopyToBackup, depsArr).genericError) {
-
-			_gotoIfError(clean, CommandListRef_copyImage(
-				commandList, tw->swapchain, tw->renderTextureBackup, ECopyType_All, (CopyImageRegion) { 0 }
-			));
-
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
 	}
@@ -515,7 +422,7 @@ void onDestroy(Window *w) {
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	RefPtr_dec(&tw->swapchain);
 	DepthStencilRef_dec(&tw->depthStencil);
-	RenderTextureRef_dec(&tw->renderTextureBackup);
+	RenderTextureRef_dec(&tw->msaaTexture);
 	CommandListRef_dec(&tw->commandList);
 }
 
@@ -593,17 +500,13 @@ void onManagerCreate(WindowManager *manager) {
 	//Compute pipelines
 
 	{
-		CharString path = CharString_createRefCStrConst("//rt_core/shaders/compute_test.main");
+		CharString path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.main");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
 
-		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.main");
+		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.main");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
 
-		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.main");
-		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[2]));
-
 		CharString nameArr[] = {
-			CharString_createRefCStrConst("Test compute pipeline"),
 			CharString_createRefCStrConst("Prepare indirect pipeline"),
 			CharString_createRefCStrConst("Indirect compute dispatch")
 		};
@@ -611,8 +514,8 @@ void onManagerCreate(WindowManager *manager) {
 		ListBuffer binaries = (ListBuffer) { 0 };
 		ListCharString names = (ListCharString) { 0 };
 
-		_gotoIfError(clean, ListBuffer_createRefConst(tempShaders, 3, &binaries));
-		_gotoIfError(clean, ListCharString_createRefConst(nameArr, 3, &names));
+		_gotoIfError(clean, ListBuffer_createRefConst(tempShaders, 2, &binaries));
+		_gotoIfError(clean, ListCharString_createRefConst(nameArr, 2, &names));
 
 		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(twm->device, &binaries, names, &twm->computeShaders));
 
@@ -680,14 +583,19 @@ void onManagerCreate(WindowManager *manager) {
 					}
 				},
 				.attachmentCountExt = 1,
-				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 }
+				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
+				.depthFormatExt = EDepthStencilFormat_D16,
+				.msaa = EMSAASamples_x4,
+				.msaaMinSampleShading = 0.2f
 			},
 			(PipelineGraphicsInfo) {
 				.depthStencil = (DepthStencilState) { .flags = EDepthStencilFlags_DepthWrite },
 				.stageCount = 2,
 				.attachmentCountExt = 1,
 				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
-				.depthFormatExt = EDepthStencilFormat_D16
+				.depthFormatExt = EDepthStencilFormat_D16,
+				.msaa = EMSAASamples_x4,
+				.msaaMinSampleShading = 0.2f
 			}
 		};
 
@@ -865,7 +773,7 @@ void onManagerCreate(WindowManager *manager) {
 	_gotoIfError(clean, ListTransition_createRefConst(transitions, 3, &transitionArr));
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
-		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)));
+		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)));
 		_gotoIfError(clean, CommandListRef_dispatch1D(commandList, 1));
 		_gotoIfError(clean, CommandListRef_endScope(commandList));
 	}
@@ -891,7 +799,7 @@ void onManagerCreate(WindowManager *manager) {
 	transitionArr.length = 1;
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
-		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 2)));
+		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)));
 		_gotoIfError(clean, CommandListRef_dispatchIndirect(commandList, twm->indirectDispatchBuffer, 0));
 		_gotoIfError(clean, CommandListRef_endScope(commandList));
 	}
