@@ -35,6 +35,7 @@
 #include "platforms/ext/errorx.h"
 #include "platforms/ext/bufferx.h"
 #include "platforms/ext/stringx.h"
+#include "platforms/ext/bmpx.h"
 #include "graphics/generic/instance.h"
 #include "graphics/generic/device.h"
 #include "graphics/generic/swapchain.h"
@@ -443,7 +444,7 @@ Bool renderVirtual = false;		//Whether or not there's a physical swapchain
 void onManagerCreate(WindowManager *manager) {
 
 	Error err = Error_none();
-	Buffer tempShaders[3] = { 0 };
+	Buffer tempBuffers[3] = { 0 };
 
 	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
 	twm->timeStep = 1;
@@ -492,19 +493,55 @@ void onManagerCreate(WindowManager *manager) {
 	_gotoIfError(clean, GraphicsDeviceRef_createSampler(twm->device, linearSampler, samplerNames[1], &twm->linear));
 	_gotoIfError(clean, GraphicsDeviceRef_createSampler(twm->device, anisotropicSampler, samplerNames[2], &twm->anisotropic));
 
+	//Load all sections in rt_core
+
+	_gotoIfError(clean, File_loadVirtual(CharString_createRefCStrConst("//rt_core"), NULL));
+
+	{
+		CharString path = CharString_createRefCStrConst("//rt_core/images/crabbage.bmp");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
+
+		BMPInfo bmpInfo;
+		_gotoIfError(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]));
+
+		//TODO: Upload texture
+
+		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[1]));
+		Buffer_freex(&tempBuffers[2]);
+		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
+
+		path = CharString_createRefCStrConst("crabbage.bmp");
+		_gotoIfError(clean, File_write(tempBuffers[1], path, U64_MAX));
+		Buffer_freex(&tempBuffers[1]);
+
+		path = CharString_createRefCStrConst("//rt_core/images/crabbage_flippening.bmp");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[1]));
+
+		_gotoIfError(clean, BMP_readx(tempBuffers[1], &bmpInfo, &tempBuffers[0]));
+
+		//TODO: Upload texture
+
+		_gotoIfError(clean, BMP_writex(tempBuffers[0], bmpInfo, &tempBuffers[2]));
+		Buffer_freex(&tempBuffers[0]);
+		Buffer_freex(&tempBuffers[1]);
+
+		path = CharString_createRefCStrConst("crabbage_flipped.bmp");
+		_gotoIfError(clean, File_write(tempBuffers[2], path, U64_MAX));
+
+		Buffer_freex(&tempBuffers[0]);
+		Buffer_freex(&tempBuffers[1]);
+		Buffer_freex(&tempBuffers[2]);
+	}
+
 	//Create pipelines
-
-	CharString shaders = CharString_createRefCStrConst("//rt_core/shaders");
-	_gotoIfError(clean, File_loadVirtual(shaders, NULL));
-
 	//Compute pipelines
 
 	{
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.main");
-		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.main");
-		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[1]));
 
 		CharString nameArr[] = {
 			CharString_createRefCStrConst("Prepare indirect pipeline"),
@@ -514,25 +551,25 @@ void onManagerCreate(WindowManager *manager) {
 		ListBuffer binaries = (ListBuffer) { 0 };
 		ListCharString names = (ListCharString) { 0 };
 
-		_gotoIfError(clean, ListBuffer_createRefConst(tempShaders, 2, &binaries));
+		_gotoIfError(clean, ListBuffer_createRefConst(tempBuffers, 2, &binaries));
 		_gotoIfError(clean, ListCharString_createRefConst(nameArr, 2, &names));
 
 		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(twm->device, &binaries, names, &twm->computeShaders));
 
-		tempShaders[0] = tempShaders[1] = tempShaders[2] = Buffer_createNull();
+		tempBuffers[0] = tempBuffers[1] = tempBuffers[2] = Buffer_createNull();
 	}
 
 	//Graphics pipelines
 
 	{
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.mainVS");
-		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[0]));
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.mainPS");
-		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[1]));
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[1]));
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/depth_test.mainVS");
-		_gotoIfError(clean, File_read(path, U64_MAX, &tempShaders[2]));
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[2]));
 
 		PipelineStage stageArr[4] = {
 
@@ -540,24 +577,24 @@ void onManagerCreate(WindowManager *manager) {
 
 			(PipelineStage) {
 				.stageType = EPipelineStage_Vertex,
-				.shaderBinary = tempShaders[0]
+				.shaderBinary = tempBuffers[0]
 			},
 
 			(PipelineStage) {
 				.stageType = EPipelineStage_Pixel,
-				.shaderBinary = tempShaders[1]
+				.shaderBinary = tempBuffers[1]
 			},
 
 			//Pipeline with depth (but still the same pixel shader)
 
 			(PipelineStage) {
 				.stageType = EPipelineStage_Vertex,
-				.shaderBinary = tempShaders[2]
+				.shaderBinary = tempBuffers[2]
 			},
 
 			(PipelineStage) {
 				.stageType = EPipelineStage_Pixel,
-				.shaderBinary = Buffer_createRefFromBuffer(tempShaders[1], true)
+				.shaderBinary = Buffer_createRefFromBuffer(tempBuffers[1], true)
 			}
 		};
 
@@ -614,7 +651,7 @@ void onManagerCreate(WindowManager *manager) {
 			twm->device, &stages, &infos, names, &twm->graphicsShaders
 		));
 
-		tempShaders[0] = tempShaders[1] = tempShaders[2] = Buffer_createNull();
+		tempBuffers[0] = tempBuffers[1] = tempBuffers[2] = Buffer_createNull();
 	}
 
 	//Mesh data
@@ -808,8 +845,8 @@ void onManagerCreate(WindowManager *manager) {
 
 clean:
 
-	for(U64 i = 0; i < sizeof(tempShaders) / sizeof(tempShaders[0]); ++i)
-		Buffer_freex(&tempShaders[i]);
+	for(U64 i = 0; i < sizeof(tempBuffers) / sizeof(tempBuffers[0]); ++i)
+		Buffer_freex(&tempBuffers[i]);
 
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }

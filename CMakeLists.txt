@@ -61,9 +61,16 @@ target_link_libraries(rt_core PUBLIC OxC3_graphics)
 set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/test)
 
 message("-- Targeting ${shaderBinary}")
+
 add_virtual_files(
 	TARGET rt_core NAME shaders 
 	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/${shaderBinary} 
+	SELF ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+add_virtual_files(
+	TARGET rt_core NAME images 
+	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res
 	SELF ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
