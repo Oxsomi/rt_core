@@ -444,7 +444,7 @@ Bool renderVirtual = false;		//Whether or not there's a physical swapchain
 void onManagerCreate(WindowManager *manager) {
 
 	Error err = Error_none();
-	Buffer tempBuffers[3] = { 0 };
+	Buffer tempBuffers[4] = { 0 };
 
 	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
 	twm->timeStep = 1;
@@ -498,6 +498,8 @@ void onManagerCreate(WindowManager *manager) {
 	_gotoIfError(clean, File_loadVirtual(CharString_createRefCStrConst("//rt_core"), NULL));
 
 	{
+		//Normal crabbage
+
 		CharString path = CharString_createRefCStrConst("//rt_core/images/crabbage.bmp");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
 
@@ -506,13 +508,76 @@ void onManagerCreate(WindowManager *manager) {
 
 		//TODO: Upload texture
 
+		bmpInfo.discardAlpha = false;
 		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[1]));
+
+		bmpInfo.discardAlpha = true;
+		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[3]));
+
 		Buffer_freex(&tempBuffers[2]);
 		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
 
 		path = CharString_createRefCStrConst("crabbage.bmp");
 		_gotoIfError(clean, File_write(tempBuffers[1], path, U64_MAX));
 		Buffer_freex(&tempBuffers[1]);
+
+		path = CharString_createRefCStrConst("crabbage_rgb.bmp");
+		_gotoIfError(clean, File_write(tempBuffers[3], path, U64_MAX));
+		Buffer_freex(&tempBuffers[3]);
+
+		//599x crabbage
+
+		path = CharString_createRefCStrConst("//rt_core/images/crabbage_599x.bmp");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
+
+		_gotoIfError(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]));
+
+		//TODO: Upload texture
+
+		bmpInfo.discardAlpha = false;
+		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[1]));
+
+		bmpInfo.discardAlpha = true;
+		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[3]));
+
+		Buffer_freex(&tempBuffers[2]);
+		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
+
+		path = CharString_createRefCStrConst("crabbage_599x.bmp");
+		_gotoIfError(clean, File_write(tempBuffers[1], path, U64_MAX));
+		Buffer_freex(&tempBuffers[1]);
+
+		path = CharString_createRefCStrConst("crabbage_rgb_599x.bmp");
+		_gotoIfError(clean, File_write(tempBuffers[3], path, U64_MAX));
+		Buffer_freex(&tempBuffers[3]);
+
+		//599x crabbage
+
+		path = CharString_createRefCStrConst("//rt_core/images/crabbage_flippening_599x.bmp");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
+
+		_gotoIfError(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]));
+
+		//TODO: Upload texture
+
+		bmpInfo.discardAlpha = false;
+		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[1]));
+
+		bmpInfo.discardAlpha = true;
+		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[3]));
+
+		Buffer_freex(&tempBuffers[2]);
+		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
+
+		path = CharString_createRefCStrConst("crabbage_flippening_599x.bmp");
+		_gotoIfError(clean, File_write(tempBuffers[1], path, U64_MAX));
+		Buffer_freex(&tempBuffers[1]);
+
+		path = CharString_createRefCStrConst("crabbage_flippening_rgb_599x.bmp");
+		_gotoIfError(clean, File_write(tempBuffers[3], path, U64_MAX));
+		Buffer_freex(&tempBuffers[3]);
+
+		//Flipped crabbage
 
 		path = CharString_createRefCStrConst("//rt_core/images/crabbage_flippening.bmp");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[1]));
@@ -521,16 +586,25 @@ void onManagerCreate(WindowManager *manager) {
 
 		//TODO: Upload texture
 
+		bmpInfo.discardAlpha = false;
 		_gotoIfError(clean, BMP_writex(tempBuffers[0], bmpInfo, &tempBuffers[2]));
+
+		bmpInfo.discardAlpha = true;
+		_gotoIfError(clean, BMP_writex(tempBuffers[0], bmpInfo, &tempBuffers[3]));
+
 		Buffer_freex(&tempBuffers[0]);
 		Buffer_freex(&tempBuffers[1]);
 
 		path = CharString_createRefCStrConst("crabbage_flipped.bmp");
 		_gotoIfError(clean, File_write(tempBuffers[2], path, U64_MAX));
 
+		path = CharString_createRefCStrConst("crabbage_flipped_rgb.bmp");
+		_gotoIfError(clean, File_write(tempBuffers[3], path, U64_MAX));
+
 		Buffer_freex(&tempBuffers[0]);
 		Buffer_freex(&tempBuffers[1]);
 		Buffer_freex(&tempBuffers[2]);
+		Buffer_freex(&tempBuffers[3]);
 	}
 
 	//Create pipelines
