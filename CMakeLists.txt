@@ -1,16 +1,16 @@
 # rt_core, a basic raytracing framework on top of OxC3 (Oxsomi Core 3).
 # Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
-# 
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see https://github.com/Oxsomi/rt_core/blob/main/LICENSE.
 # Be aware that GPL3 requires closed source products to be GPL3 too if released to the public.
@@ -63,14 +63,14 @@ set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/test)
 message("-- Targeting ${shaderBinary}")
 
 add_virtual_files(
-	TARGET rt_core NAME shaders 
-	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/${shaderBinary} 
+	TARGET rt_core NAME shaders
+	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/${shaderBinary}
 	SELF ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 add_virtual_files(
-	TARGET rt_core NAME images 
-	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res
+	TARGET rt_core NAME images
+	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/images
 	SELF ${CMAKE_CURRENT_SOURCE_DIR}
 )
 

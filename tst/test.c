@@ -1,16 +1,16 @@
 /* OxC3(Oxsomi core 3), a general framework and toolset for cross platform applications.
 *  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
-*  
+*
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
 *  the Free Software Foundation, either version 3 of the License, or
 *  (at your option) any later version.
-*  
+*
 *  This program is distributed in the hope that it will be useful,
 *  but WITHOUT ANY WARRANTY; without even the implied warranty of
 *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 *  GNU General Public License for more details.
-*  
+*
 *  You should have received a copy of the GNU General Public License
 *  along with this program. If not, see https://github.com/Oxsomi/core3/blob/main/LICENSE.
 *  Be aware that GPL3 requires closed source products to be GPL3 too if released to the public.
@@ -44,6 +44,7 @@
 #include "graphics/generic/device_buffer.h"
 #include "graphics/generic/depth_stencil.h"
 #include "graphics/generic/sampler.h"
+#include "graphics/generic/device_texture.h"
 #include "graphics/generic/render_texture.h"
 #include <stdio.h>
 
@@ -63,6 +64,8 @@ typedef struct TestWindowManager {
 	DeviceBufferRef *indirectDispatchBuffer;		//sizeof(Dispatch) * 2
 	DeviceBufferRef *deviceBuffer;					//Constant F32x3 for animating color
 	DeviceBufferRef *viewProjMatrices;				//F32x4x4 (view, proj, viewProj)
+
+	DeviceTextureRef *crabbage600x, *crabbage599x;
 
 	ListPipelineRef computeShaders;
 	ListPipelineRef graphicsShaders;
@@ -144,7 +147,7 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 					w->owner, EWindowType_Physical,
 					I32x2_zero(), EResolution_get(EResolution_FHD),
 					I32x2_zero(), I32x2_zero(),
-					EWindowHint_AllowFullscreen, 
+					EWindowHint_AllowFullscreen,
 					CharString_createRefCStrConst("Rt core test (duped)"),
 					TestWindow_getCallbacks(),
 					EWindowFormat_BGRA8,
@@ -229,6 +232,8 @@ void onManagerDraw(WindowManager *windowManager) {
 		U32 constantColorRead, constantColorWrite;
 		U32 indirectDrawWrite, indirectDispatchWrite;
 		U32 viewProjMatricesWrite, viewProjMatricesRead;
+		U32 crabbage599x, crabbage2049x;
+		U32 sampler;
 	} RuntimeData;
 
 	DeviceBuffer *viewProjMatrices = DeviceBufferRef_ptr(twm->viewProjMatrices);
@@ -239,7 +244,10 @@ void onManagerDraw(WindowManager *windowManager) {
 		.indirectDrawWrite = DeviceBufferRef_ptr(twm->indirectDrawBuffer)->writeHandle,
 		.indirectDispatchWrite = DeviceBufferRef_ptr(twm->indirectDispatchBuffer)->writeHandle,
 		.viewProjMatricesWrite = viewProjMatrices->writeHandle,
-		.viewProjMatricesRead = viewProjMatrices->readHandle
+		.viewProjMatricesRead = viewProjMatrices->readHandle,
+		.crabbage599x = DeviceTextureRef_ptr(twm->crabbage599x)->readHandle,
+		.crabbage2049x = DeviceTextureRef_ptr(twm->crabbage600x)->readHandle,
+		.sampler = SamplerRef_ptr(twm->anisotropic)->samplerLocation
 	};
 
 	Buffer runtimeData = Buffer_createRefConst((const U32*)&data, sizeof(data));
@@ -285,10 +293,10 @@ void onResize(Window *w) {
 		DepthStencilRef_dec(&tw->depthStencil);
 
 	_gotoIfError(clean, GraphicsDeviceRef_createDepthStencil(
-		twm->device, 
-		w->size, EDepthStencilFormat_D16, false, 
+		twm->device,
+		w->size, EDepthStencilFormat_D16, false,
 		EMSAASamples_x4,
-		CharString_createRefCStrConst("Test depth stencil"), 
+		CharString_createRefCStrConst("Test depth stencil"),
 		&tw->depthStencil
 	));
 
@@ -296,8 +304,8 @@ void onResize(Window *w) {
 		RefPtr_dec(&tw->msaaTexture);
 
 	_gotoIfError(clean, GraphicsDeviceRef_createRenderTexture(
-		twm->device, 
-		ERenderTextureType_2D, I32x4_fromI32x2(w->size), ETextureFormatId_BGRA8, ERenderTextureUsage_None, 
+		twm->device,
+		ETextureType_2D, I32x4_fromI32x2(w->size), ETextureFormatId_BGRA8, ERenderTextureUsage_None,
 		EMSAASamples_x4,
 		CharString_createRefCStrConst("MSAA x4 render texture"),
 		&tw->msaaTexture
@@ -315,7 +323,7 @@ void onResize(Window *w) {
 
 		//Prepare 2 indirect draw calls and update constant color
 
-		Transition transitions[2] = { 0 };
+		Transition transitions[4] = { 0 };
 		CommandScopeDependency deps[2] = { 0 };
 
 		ListTransition transitionArr = (ListTransition) { 0 };
@@ -327,20 +335,26 @@ void onResize(Window *w) {
 
 		transitions[0] = (Transition) {
 			.resource = twm->deviceBuffer,
-			.range = { .buffer = (BufferRange) { 0 } },
-			.stage = EPipelineStage_Pixel,
-			.isWrite = false
+			.stage = EPipelineStage_Pixel
 		};
 
 		transitions[1] = (Transition) {
 			.resource = twm->viewProjMatrices,
-			.range = { .buffer = (BufferRange) { 0 } },
-			.stage = EPipelineStage_Vertex,
-			.isWrite = false
+			.stage = EPipelineStage_Vertex
+		};
+
+		transitions[2] = (Transition) {
+			.resource = twm->crabbage599x,
+			.stage = EPipelineStage_Pixel
+		};
+
+		transitions[3] = (Transition) {
+			.resource = twm->crabbage600x,
+			.stage = EPipelineStage_Pixel
 		};
 
 		depsArr.length = 0;
-		transitionArr.length = 2;
+		transitionArr.length = 4;
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
 
@@ -376,7 +390,7 @@ void onResize(Window *w) {
 				commandList, ListPipelineRef_at(twm->graphicsShaders, 0)
 			));
 
-			SetPrimitiveBuffersCmd primitiveBuffers = (SetPrimitiveBuffersCmd) { 
+			SetPrimitiveBuffersCmd primitiveBuffers = (SetPrimitiveBuffersCmd) {
 				.vertexBuffers = { twm->vertexBuffers[0], twm->vertexBuffers[1] },
 				.indexBuffer = twm->indexBuffer,
 				.isIndex32Bit = false
@@ -506,24 +520,21 @@ void onManagerCreate(WindowManager *manager) {
 		BMPInfo bmpInfo;
 		_gotoIfError(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]));
 
-		//TODO: Upload texture
+		if(bmpInfo.w >> 16 || bmpInfo.h >> 16)
+			_gotoIfError(clean, Error_invalidState(0, "onManagerCreate() bmpInfo resolution out of bounds"));
 
-		bmpInfo.discardAlpha = false;
-		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[1]));
+		_gotoIfError(clean, GraphicsDeviceRef_createTexture(
+			twm->device,
+			ETextureType_2D,
+			(ETextureFormatId) bmpInfo.textureFormatId,
+			EDeviceTextureUsage_ShaderRead,
+			(U16)bmpInfo.w, (U16)bmpInfo.h, 1,
+			CharString_createRefCStrConst("Crabbage.bmp 600x"),
+			&tempBuffers[2],
+			&twm->crabbage600x
+		));
 
-		bmpInfo.discardAlpha = true;
-		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[3]));
-
-		Buffer_freex(&tempBuffers[2]);
 		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
-
-		path = CharString_createRefCStrConst("crabbage.bmp");
-		_gotoIfError(clean, File_write(tempBuffers[1], path, U64_MAX));
-		Buffer_freex(&tempBuffers[1]);
-
-		path = CharString_createRefCStrConst("crabbage_rgb.bmp");
-		_gotoIfError(clean, File_write(tempBuffers[3], path, U64_MAX));
-		Buffer_freex(&tempBuffers[3]);
 
 		//599x crabbage
 
@@ -532,79 +543,18 @@ void onManagerCreate(WindowManager *manager) {
 
 		_gotoIfError(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]));
 
-		//TODO: Upload texture
+		_gotoIfError(clean, GraphicsDeviceRef_createTexture(
+			twm->device,
+			ETextureType_2D,
+			(ETextureFormatId) bmpInfo.textureFormatId,
+			EDeviceTextureUsage_ShaderRead,
+			(U16)bmpInfo.w, (U16)bmpInfo.h, 1,
+			CharString_createRefCStrConst("Crabbage.bmp 599x"),
+			&tempBuffers[2],
+			&twm->crabbage599x
+		));
 
-		bmpInfo.discardAlpha = false;
-		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[1]));
-
-		bmpInfo.discardAlpha = true;
-		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[3]));
-
-		Buffer_freex(&tempBuffers[2]);
 		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
-
-		path = CharString_createRefCStrConst("crabbage_599x.bmp");
-		_gotoIfError(clean, File_write(tempBuffers[1], path, U64_MAX));
-		Buffer_freex(&tempBuffers[1]);
-
-		path = CharString_createRefCStrConst("crabbage_rgb_599x.bmp");
-		_gotoIfError(clean, File_write(tempBuffers[3], path, U64_MAX));
-		Buffer_freex(&tempBuffers[3]);
-
-		//599x crabbage
-
-		path = CharString_createRefCStrConst("//rt_core/images/crabbage_flippening_599x.bmp");
-		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
-
-		_gotoIfError(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]));
-
-		//TODO: Upload texture
-
-		bmpInfo.discardAlpha = false;
-		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[1]));
-
-		bmpInfo.discardAlpha = true;
-		_gotoIfError(clean, BMP_writex(tempBuffers[2], bmpInfo, &tempBuffers[3]));
-
-		Buffer_freex(&tempBuffers[2]);
-		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
-
-		path = CharString_createRefCStrConst("crabbage_flippening_599x.bmp");
-		_gotoIfError(clean, File_write(tempBuffers[1], path, U64_MAX));
-		Buffer_freex(&tempBuffers[1]);
-
-		path = CharString_createRefCStrConst("crabbage_flippening_rgb_599x.bmp");
-		_gotoIfError(clean, File_write(tempBuffers[3], path, U64_MAX));
-		Buffer_freex(&tempBuffers[3]);
-
-		//Flipped crabbage
-
-		path = CharString_createRefCStrConst("//rt_core/images/crabbage_flippening.bmp");
-		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[1]));
-
-		_gotoIfError(clean, BMP_readx(tempBuffers[1], &bmpInfo, &tempBuffers[0]));
-
-		//TODO: Upload texture
-
-		bmpInfo.discardAlpha = false;
-		_gotoIfError(clean, BMP_writex(tempBuffers[0], bmpInfo, &tempBuffers[2]));
-
-		bmpInfo.discardAlpha = true;
-		_gotoIfError(clean, BMP_writex(tempBuffers[0], bmpInfo, &tempBuffers[3]));
-
-		Buffer_freex(&tempBuffers[0]);
-		Buffer_freex(&tempBuffers[1]);
-
-		path = CharString_createRefCStrConst("crabbage_flipped.bmp");
-		_gotoIfError(clean, File_write(tempBuffers[2], path, U64_MAX));
-
-		path = CharString_createRefCStrConst("crabbage_flipped_rgb.bmp");
-		_gotoIfError(clean, File_write(tempBuffers[3], path, U64_MAX));
-
-		Buffer_freex(&tempBuffers[0]);
-		Buffer_freex(&tempBuffers[1]);
-		Buffer_freex(&tempBuffers[2]);
-		Buffer_freex(&tempBuffers[3]);
 	}
 
 	//Create pipelines
@@ -710,7 +660,7 @@ void onManagerCreate(WindowManager *manager) {
 			}
 		};
 
-		CharString nameArr[] = { 
+		CharString nameArr[] = {
 			CharString_createRefCStrConst("Test graphics pipeline"),
 			CharString_createRefCStrConst("Test graphics depth pipeline")
 		};
@@ -818,26 +768,26 @@ void onManagerCreate(WindowManager *manager) {
 
 	name = CharString_createRefCStrConst("View proj matrices buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
-		twm->device, 
-		EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4) * 4 * 3, 
+		twm->device,
+		EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4) * 4 * 3,
 		&twm->viewProjMatrices
 	));
 
 	name = CharString_createRefCStrConst("Test indirect draw buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
-		twm->device, 
-		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect, 
-		name, 
-		sizeof(DrawCallIndexed) * 2, 
+		twm->device,
+		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect,
+		name,
+		sizeof(DrawCallIndexed) * 2,
 		&twm->indirectDrawBuffer
 	));
 
 	name = CharString_createRefCStrConst("Test indirect dispatch buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
-		twm->device, 
-		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect, 
-		name, 
-		sizeof(Dispatch), 
+		twm->device,
+		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect,
+		name,
+		sizeof(Dispatch),
 		&twm->indirectDispatchBuffer
 	));
 
@@ -893,7 +843,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	CommandScopeDependency deps[3] = {
 		(CommandScopeDependency) {
-			.type = ECommandScopeDependencyType_Conditional, 
+			.type = ECommandScopeDependencyType_Conditional,
 			.id = EScopes_PrepareIndirect
 		}
 	};
@@ -938,6 +888,10 @@ void onManagerDestroy(WindowManager *manager) {
 	DeviceBufferRef_dec(&twm->viewProjMatrices);
 	DeviceBufferRef_dec(&twm->indirectDrawBuffer);
 	DeviceBufferRef_dec(&twm->indirectDispatchBuffer);
+
+	DeviceTextureRef_dec(&twm->crabbage599x);
+	DeviceTextureRef_dec(&twm->crabbage600x);
+
 	PipelineRef_decAll(&twm->graphicsShaders);
 	PipelineRef_decAll(&twm->computeShaders);
 	CommandListRef_dec(&twm->prepCommandList);
@@ -974,7 +928,7 @@ int Program_run() {
 		&manager, renderVirtual ? EWindowType_Virtual : EWindowType_Physical,
 		I32x2_zero(), EResolution_get(EResolution_FHD),
 		I32x2_zero(), I32x2_zero(),
-		EWindowHint_AllowFullscreen, 
+		EWindowHint_AllowFullscreen,
 		CharString_createRefCStrConst("Rt core test"),
 		TestWindow_getCallbacks(),
 		EWindowFormat_BGRA8,
