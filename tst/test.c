@@ -40,6 +40,7 @@
 #include "graphics/generic/device.h"
 #include "graphics/generic/swapchain.h"
 #include "graphics/generic/command_list.h"
+#include "graphics/generic/commands.h"
 #include "graphics/generic/pipeline.h"
 #include "graphics/generic/device_buffer.h"
 #include "graphics/generic/depth_stencil.h"
@@ -245,8 +246,8 @@ void onManagerDraw(WindowManager *windowManager) {
 		.indirectDispatchWrite = DeviceBufferRef_ptr(twm->indirectDispatchBuffer)->writeHandle,
 		.viewProjMatricesWrite = viewProjMatrices->writeHandle,
 		.viewProjMatricesRead = viewProjMatrices->readHandle,
-		.crabbage599x = DeviceTextureRef_ptr(twm->crabbage599x)->readHandle,
-		.crabbage2049x = DeviceTextureRef_ptr(twm->crabbage600x)->readHandle,
+		.crabbage599x = TextureRef_getCurrReadHandle(twm->crabbage599x, 0),
+		.crabbage2049x = TextureRef_getCurrReadHandle(twm->crabbage600x, 0),
 		.sampler = SamplerRef_ptr(twm->anisotropic)->samplerLocation
 	};
 
@@ -292,9 +293,12 @@ void onResize(Window *w) {
 	if(tw->depthStencil)
 		DepthStencilRef_dec(&tw->depthStencil);
 
+	U16 width = (U16) I32x2_x(w->size);
+	U16 height = (U16) I32x2_y(w->size);
+
 	_gotoIfError(clean, GraphicsDeviceRef_createDepthStencil(
 		twm->device,
-		w->size, EDepthStencilFormat_D16, false,
+		width, height, EDepthStencilFormat_D16, false,
 		EMSAASamples_x4,
 		CharString_createRefCStrConst("Test depth stencil"),
 		&tw->depthStencil
@@ -305,7 +309,7 @@ void onResize(Window *w) {
 
 	_gotoIfError(clean, GraphicsDeviceRef_createRenderTexture(
 		twm->device,
-		ETextureType_2D, I32x4_fromI32x2(w->size), ETextureFormatId_BGRA8, ERenderTextureUsage_None,
+		ETextureType_2D, width, height, 1, ETextureFormatId_BGRA8, EGraphicsResourceFlag_None,
 		EMSAASamples_x4,
 		CharString_createRefCStrConst("MSAA x4 render texture"),
 		&tw->msaaTexture
@@ -323,7 +327,7 @@ void onResize(Window *w) {
 
 		//Prepare 2 indirect draw calls and update constant color
 
-		Transition transitions[4] = { 0 };
+		Transition transitions[5] = { 0 };
 		CommandScopeDependency deps[2] = { 0 };
 
 		ListTransition transitionArr = (ListTransition) { 0 };
@@ -353,8 +357,10 @@ void onResize(Window *w) {
 			.stage = EPipelineStage_Pixel
 		};
 
+		transitions[4] = (Transition) { .resource = twm->anisotropic };		//Keep sampler alive
+
 		depsArr.length = 0;
-		transitionArr.length = 4;
+		transitionArr.length = 5;
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
 
@@ -386,9 +392,7 @@ void onResize(Window *w) {
 
 			//Draw without depth
 
-			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(
-				commandList, ListPipelineRef_at(twm->graphicsShaders, 0)
-			));
+			_gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 0)));
 
 			SetPrimitiveBuffersCmd primitiveBuffers = (SetPrimitiveBuffersCmd) {
 				.vertexBuffers = { twm->vertexBuffers[0], twm->vertexBuffers[1] },
@@ -425,8 +429,8 @@ void onCreate(Window *w) {
 	_gotoIfError(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &tw->commandList));
 
 	if(w->type != EWindowType_Virtual) {
-		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w, .usage = ESwapchainUsage_ShaderWrite };
-		_gotoIfError(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, &tw->swapchain));
+		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w };
+		_gotoIfError(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, true, &tw->swapchain));
 	}
 
 clean:
@@ -442,15 +446,11 @@ void onDestroy(Window *w) {
 }
 
 typedef struct VertexPosBuffer {
-
 	F16 pos[2];
-
 } VertexPosBuffer;
 
 typedef struct VertexDataBuffer {
-
 	F16 uv[2];
-
 } VertexDataBuffer;
 
 Bool renderVirtual = false;		//Whether or not there's a physical swapchain
@@ -527,7 +527,7 @@ void onManagerCreate(WindowManager *manager) {
 			twm->device,
 			ETextureType_2D,
 			(ETextureFormatId) bmpInfo.textureFormatId,
-			EDeviceTextureUsage_ShaderRead,
+			EGraphicsResourceFlag_ShaderRead,
 			(U16)bmpInfo.w, (U16)bmpInfo.h, 1,
 			CharString_createRefCStrConst("Crabbage.bmp 600x"),
 			&tempBuffers[2],
@@ -535,6 +535,7 @@ void onManagerCreate(WindowManager *manager) {
 		));
 
 		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
+		Buffer_freex(&tempBuffers[2]);
 
 		//599x crabbage
 
@@ -547,7 +548,7 @@ void onManagerCreate(WindowManager *manager) {
 			twm->device,
 			ETextureType_2D,
 			(ETextureFormatId) bmpInfo.textureFormatId,
-			EDeviceTextureUsage_ShaderRead,
+			EGraphicsResourceFlag_ShaderRead,
 			(U16)bmpInfo.w, (U16)bmpInfo.h, 1,
 			CharString_createRefCStrConst("Crabbage.bmp 599x"),
 			&tempBuffers[2],
@@ -555,6 +556,7 @@ void onManagerCreate(WindowManager *manager) {
 		));
 
 		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
+		Buffer_freex(&tempBuffers[2]);
 	}
 
 	//Create pipelines
@@ -746,37 +748,37 @@ void onManagerCreate(WindowManager *manager) {
 	Buffer vertexData = Buffer_createRefConst(vertexPos, sizeof(vertexPos));
 	CharString name = CharString_createRefCStrConst("Vertex position buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[0]
+		twm->device, EDeviceBufferUsage_Vertex, EGraphicsResourceFlag_None, name, &vertexData, &twm->vertexBuffers[0]
 	));
 
 	vertexData = Buffer_createRefConst(vertDat, sizeof(vertDat));
 	name = CharString_createRefCStrConst("Vertex attribute buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, EDeviceBufferUsage_Vertex, name, &vertexData, &twm->vertexBuffers[1]
+		twm->device, EDeviceBufferUsage_Vertex, EGraphicsResourceFlag_None, name, &vertexData, &twm->vertexBuffers[1]
 	));
 
 	Buffer indexData = Buffer_createRefConst(indexDat, sizeof(indexDat));
 	name = CharString_createRefCStrConst("Index buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, EDeviceBufferUsage_Index, name, &indexData, &twm->indexBuffer
+		twm->device, EDeviceBufferUsage_Index, EGraphicsResourceFlag_None, name, &indexData, &twm->indexBuffer
 	));
 
 	name = CharString_createRefCStrConst("Test shader buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
-		twm->device, EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4), &twm->deviceBuffer
+		twm->device, EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRW, name, sizeof(F32x4), &twm->deviceBuffer
 	));
 
 	name = CharString_createRefCStrConst("View proj matrices buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
-		EDeviceBufferUsage_ShaderRead | EDeviceBufferUsage_ShaderWrite, name, sizeof(F32x4) * 4 * 3,
+		EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRW, name, sizeof(F32x4) * 4 * 3,
 		&twm->viewProjMatrices
 	));
 
 	name = CharString_createRefCStrConst("Test indirect draw buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
-		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect,
+		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderWrite,
 		name,
 		sizeof(DrawCallIndexed) * 2,
 		&twm->indirectDrawBuffer
@@ -785,7 +787,7 @@ void onManagerCreate(WindowManager *manager) {
 	name = CharString_createRefCStrConst("Test indirect dispatch buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
-		EDeviceBufferUsage_ShaderWrite | EDeviceBufferUsage_Indirect,
+		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderWrite,
 		name,
 		sizeof(Dispatch),
 		&twm->indirectDispatchBuffer
@@ -800,10 +802,8 @@ void onManagerCreate(WindowManager *manager) {
 	_gotoIfError(clean, CommandListRef_begin(commandList, true, U64_MAX));
 
 	typedef enum EScopes {
-
 		EScopes_PrepareIndirect,
 		EScopes_IndirectCalcConstant
-
 	} EScopes;
 
 	//Prepare 2 indirect draw calls and update constant color
