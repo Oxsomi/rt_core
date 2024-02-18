@@ -24,6 +24,7 @@
 #include "types/time.h"
 #include "types/flp.h"
 #include "formats/bmp.h"
+#include "formats/dds.h"
 #include "platforms/keyboard.h"
 #include "platforms/platform.h"
 #include "platforms/thread.h"
@@ -36,6 +37,7 @@
 #include "platforms/ext/bufferx.h"
 #include "platforms/ext/stringx.h"
 #include "platforms/ext/bmpx.h"
+#include "platforms/ext/ddsx.h"
 #include "graphics/generic/instance.h"
 #include "graphics/generic/device.h"
 #include "graphics/generic/swapchain.h"
@@ -66,7 +68,7 @@ typedef struct TestWindowManager {
 	DeviceBufferRef *deviceBuffer;					//Constant F32x3 for animating color
 	DeviceBufferRef *viewProjMatrices;				//F32x4x4 (view, proj, viewProj)
 
-	DeviceTextureRef *crabbage600x, *crabbage599x;
+	DeviceTextureRef *crabbage2049x, *crabbageCompressed;
 
 	ListPipelineRef computeShaders;
 	ListPipelineRef graphicsShaders;
@@ -233,7 +235,7 @@ void onManagerDraw(WindowManager *windowManager) {
 		U32 constantColorRead, constantColorWrite;
 		U32 indirectDrawWrite, indirectDispatchWrite;
 		U32 viewProjMatricesWrite, viewProjMatricesRead;
-		U32 crabbage599x, crabbage2049x;
+		U32 crabbage2049x, crabbageCompressed;
 		U32 sampler;
 	} RuntimeData;
 
@@ -246,8 +248,8 @@ void onManagerDraw(WindowManager *windowManager) {
 		.indirectDispatchWrite = DeviceBufferRef_ptr(twm->indirectDispatchBuffer)->writeHandle,
 		.viewProjMatricesWrite = viewProjMatrices->writeHandle,
 		.viewProjMatricesRead = viewProjMatrices->readHandle,
-		.crabbage599x = TextureRef_getCurrReadHandle(twm->crabbage599x, 0),
-		.crabbage2049x = TextureRef_getCurrReadHandle(twm->crabbage600x, 0),
+		.crabbage2049x = TextureRef_getCurrReadHandle(twm->crabbage2049x, 0),
+		.crabbageCompressed = TextureRef_getCurrReadHandle(twm->crabbageCompressed, 0),
 		.sampler = SamplerRef_ptr(twm->anisotropic)->samplerLocation
 	};
 
@@ -348,12 +350,12 @@ void onResize(Window *w) {
 		};
 
 		transitions[2] = (Transition) {
-			.resource = twm->crabbage599x,
+			.resource = twm->crabbageCompressed,
 			.stage = EPipelineStage_Pixel
 		};
 
 		transitions[3] = (Transition) {
-			.resource = twm->crabbage600x,
+			.resource = twm->crabbage2049x,
 			.stage = EPipelineStage_Pixel
 		};
 
@@ -459,6 +461,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	Error err = Error_none();
 	Buffer tempBuffers[4] = { 0 };
+	ListSubResourceData subResource = (ListSubResourceData) { 0 };
 
 	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
 	twm->timeStep = 1;
@@ -531,32 +534,33 @@ void onManagerCreate(WindowManager *manager) {
 			(U16)bmpInfo.w, (U16)bmpInfo.h, 1,
 			CharString_createRefCStrConst("Crabbage.bmp 600x"),
 			&tempBuffers[2],
-			&twm->crabbage600x
+			&twm->crabbage2049x
 		));
 
 		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
 		Buffer_freex(&tempBuffers[2]);
 
-		//599x crabbage
+		//DDS crabbage
 
-		path = CharString_createRefCStrConst("//rt_core/images/crabbage_599x.bmp");
+		path = CharString_createRefCStrConst("//rt_core/images/crabbage_mips.dds");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
 
-		_gotoIfError(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]));
+		DDSInfo ddsInfo;
+		_gotoIfError(clean, DDS_readx(tempBuffers[0], &ddsInfo, &subResource));
 
 		_gotoIfError(clean, GraphicsDeviceRef_createTexture(
 			twm->device,
-			ETextureType_2D,
-			(ETextureFormatId) bmpInfo.textureFormatId,
+			ddsInfo.type,
+			ddsInfo.textureFormatId,
 			EGraphicsResourceFlag_ShaderRead,
-			(U16)bmpInfo.w, (U16)bmpInfo.h, 1,
-			CharString_createRefCStrConst("Crabbage.bmp 599x"),
-			&tempBuffers[2],
-			&twm->crabbage599x
+			(U16)ddsInfo.w, (U16)ddsInfo.h, (U16)ddsInfo.l,
+			CharString_createRefCStrConst("Crabbage_mips.dds"),
+			&subResource.ptrNonConst[0].data,
+			&twm->crabbageCompressed
 		));
 
-		Buffer_freex(&tempBuffers[0]);		//Free the file here, since it might be referenced by BMP_read
-		Buffer_freex(&tempBuffers[2]);
+		ListSubResourceData_freeAllx(&subResource);
+		Buffer_freex(&tempBuffers[0]);
 	}
 
 	//Create pipelines
@@ -869,6 +873,8 @@ void onManagerCreate(WindowManager *manager) {
 
 clean:
 
+	ListSubResourceData_freeAllx(&subResource);
+
 	for(U64 i = 0; i < sizeof(tempBuffers) / sizeof(tempBuffers[0]); ++i)
 		Buffer_freex(&tempBuffers[i]);
 
@@ -889,8 +895,8 @@ void onManagerDestroy(WindowManager *manager) {
 	DeviceBufferRef_dec(&twm->indirectDrawBuffer);
 	DeviceBufferRef_dec(&twm->indirectDispatchBuffer);
 
-	DeviceTextureRef_dec(&twm->crabbage599x);
-	DeviceTextureRef_dec(&twm->crabbage600x);
+	DeviceTextureRef_dec(&twm->crabbage2049x);
+	DeviceTextureRef_dec(&twm->crabbageCompressed);
 
 	PipelineRef_decAll(&twm->graphicsShaders);
 	PipelineRef_decAll(&twm->computeShaders);

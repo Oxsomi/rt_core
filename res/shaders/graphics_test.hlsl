@@ -19,7 +19,7 @@ F32x4 mainPS(VSOutput input): SV_TARGET {
 	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBuffer);
 	F32x3 col = getAtUniform<F32x3>(resourceId, 0);		//Randomly output from compute shader (0 at init)
 
-	Texture2D tex = texture2DUniform(getAppData1u(EResourceBinding_Crabbage2049x));
+	Texture2D tex = texture2DUniform(getAppData1u(EResourceBinding_CrabbageCompressed));
 	SamplerState sampler = samplerUniform(getAppData1u(EResourceBinding_Sampler));
 
 	F32x3 col2 = tex.Sample(sampler, input.uv).rgb;

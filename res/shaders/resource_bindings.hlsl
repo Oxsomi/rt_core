@@ -7,8 +7,8 @@ enum EResourceBinding {
 	EResourceBinding_IndirectDispatchRW,
 	EResourceBinding_ViewProjMatricesRW,
 	EResourceBinding_ViewProjMatrices,
-	EResourceBinding_Crabbage599x,
 	EResourceBinding_Crabbage2049x,
+	EResourceBinding_CrabbageCompressed,
 	EResourceBinding_Sampler
 };
 
