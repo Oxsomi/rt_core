@@ -548,6 +548,11 @@ void onManagerCreate(WindowManager *manager) {
 		DDSInfo ddsInfo;
 		_gotoIfError(clean, DDS_readx(tempBuffers[0], &ddsInfo, &subResource));
 
+		path = CharString_createRefCStrConst("test_crabbage_mips.dds");
+		_gotoIfError(clean, DDS_writex(subResource, ddsInfo, &tempBuffers[1]));
+		_gotoIfError(clean, File_write(tempBuffers[1], path, U64_MAX));
+		Buffer_freex(&tempBuffers[1]);
+
 		_gotoIfError(clean, GraphicsDeviceRef_createTexture(
 			twm->device,
 			ddsInfo.type,
