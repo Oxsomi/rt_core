@@ -143,7 +143,7 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
 			//F10 we spawn more windows (but only if multiple physical windows are supported, such as on desktop)
 
-			case EKey_F10:
+			case EKey_F10: {
 
 				Window *wind = NULL;
 				WindowManager_createWindow(
@@ -158,6 +158,10 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 					&wind
 				);
 
+				break;
+			}
+			
+			default:
 				break;
 		}
 	}
@@ -192,7 +196,7 @@ void onManagerUpdate(WindowManager *windowManager, F64 dt) {
 	tw->timeSinceLastSecond += dt;
 }
 
-void onDraw(Window *w) { w; }
+void onDraw(Window *w) { (void)w; }
 
 void onManagerDraw(WindowManager *windowManager) {
 
@@ -326,6 +330,8 @@ void onResize(Window *w) {
 		typedef enum EScopes {
 			EScopes_GraphicsTest
 		} EScopes;
+		
+		EScopes scopes; (void)scopes;
 
 		//Prepare 2 indirect draw calls and update constant color
 
@@ -814,6 +820,8 @@ void onManagerCreate(WindowManager *manager) {
 		EScopes_PrepareIndirect,
 		EScopes_IndirectCalcConstant
 	} EScopes;
+	
+	EScopes scopes; (void)scopes;
 
 	//Prepare 2 indirect draw calls and update constant color
 
