@@ -9,7 +9,7 @@ void main(U32 i : SV_DispatchThreadID) {
 	//View projection matrices
 
 	if(i == 0) {
-	
+
 		F32x3 camPos = F32x3(2, 2, 2);
 
 		F32 aspect = 1;
@@ -34,7 +34,7 @@ void main(U32 i : SV_DispatchThreadID) {
 		vp.view = v;
 		vp.proj = p;
 		vp.viewProj = mul(v, p);
-		
+
 		U32 viewProjMatRW = getAppData1u(EResourceBinding_ViewProjMatricesRW);
 		setAtUniform<ViewProjMatrices>(viewProjMatRW, 0, vp);
 	}

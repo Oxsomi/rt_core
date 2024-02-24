@@ -27,7 +27,7 @@
 #include "formats/dds.h"
 #include "platforms/keyboard.h"
 #include "platforms/platform.h"
-#include "platforms/thread.h"
+#include "types/thread.h"
 #include "platforms/input_device.h"
 #include "platforms/window_manager.h"
 #include "platforms/window.h"
@@ -160,7 +160,7 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
 				break;
 			}
-			
+
 			default:
 				break;
 		}
@@ -187,7 +187,7 @@ void onManagerUpdate(WindowManager *windowManager, F64 dt) {
 
 	if(F64_floor(prevTime) != F64_floor(tw->realTime)) {
 
-		Log_debugLnx("%u fps", (U32)F64_round(tw->framesSinceLastSecond / tw->timeSinceLastSecond));
+		Log_debugLnx("%"PRIu32" fps", (U32)F64_round(tw->framesSinceLastSecond / tw->timeSinceLastSecond));
 
 		tw->framesSinceLastSecond = 0;
 		tw->timeSinceLastSecond = 0;
@@ -213,7 +213,7 @@ void onManagerDraw(WindowManager *windowManager) {
 	_gotoIfError(clean, ListCommandListRef_pushBackx(&twm->commandLists, twm->prepCommandList));
 
 	for(U64 handle = 0; handle < windowManager->windows.length; ++handle) {
-		
+
 		Window *w = windowManager->windows.ptr[handle];
 		Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
 
@@ -330,7 +330,7 @@ void onResize(Window *w) {
 		typedef enum EScopes {
 			EScopes_GraphicsTest
 		} EScopes;
-		
+
 		EScopes scopes; (void)scopes;
 
 		//Prepare 2 indirect draw calls and update constant color
@@ -471,7 +471,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
 	twm->timeStep = 1;
-	twm->renderVirtual = renderVirtual;			
+	twm->renderVirtual = renderVirtual;
 
 	//Graphics test
 
@@ -820,7 +820,7 @@ void onManagerCreate(WindowManager *manager) {
 		EScopes_PrepareIndirect,
 		EScopes_IndirectCalcConstant
 	} EScopes;
-	
+
 	EScopes scopes; (void)scopes;
 
 	//Prepare 2 indirect draw calls and update constant color
@@ -929,7 +929,7 @@ void onManagerDestroy(WindowManager *manager) {
 	GraphicsInstanceRef_dec(&twm->instance);
 }
 
-int Program_run() {
+I32 Program_run() {
 
 	Error err = Error_none();
 
