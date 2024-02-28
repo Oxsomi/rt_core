@@ -49,6 +49,7 @@
 #include "graphics/generic/sampler.h"
 #include "graphics/generic/device_texture.h"
 #include "graphics/generic/render_texture.h"
+#include "graphics/generic/blas.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -61,6 +62,7 @@ typedef struct TestWindowManager {
 	GraphicsDeviceRef *device;
 	CommandListRef *prepCommandList;
 
+	DeviceBufferRef *aabbs;							//temp buffer for holding aabbs for blasAABB
 	DeviceBufferRef *vertexBuffers[2];
 	DeviceBufferRef *indexBuffer;
 	DeviceBufferRef *indirectDrawBuffer;			//sizeof(DrawCallIndexed) * 2
@@ -69,6 +71,9 @@ typedef struct TestWindowManager {
 	DeviceBufferRef *viewProjMatrices;				//F32x4x4 (view, proj, viewProj)
 
 	DeviceTextureRef *crabbage2049x, *crabbageCompressed;
+
+	BLASRef *blas;									//If rt is on, the BLAS of a simple plane
+	BLASRef *blasAABB;								//If rt is on, the BLAS of a few boxes
 
 	ListPipelineRef computeShaders;
 	ListPipelineRef graphicsShaders;
@@ -760,10 +765,18 @@ void onManagerCreate(WindowManager *manager) {
 		9, 10, 7
 	};
 
+	EDeviceBufferUsage asFlag = (EDeviceBufferUsage) 0;
+
+	if(deviceInfo.capabilities.features & EGraphicsFeatures_Raytracing)
+		asFlag |= EDeviceBufferUsage_ASReadExt;
+
+	EDeviceBufferUsage positionBufferAs = EDeviceBufferUsage_Vertex | asFlag;
+	EDeviceBufferUsage indexBufferAs = EDeviceBufferUsage_Index | asFlag;
+
 	Buffer vertexData = Buffer_createRefConst(vertexPos, sizeof(vertexPos));
 	CharString name = CharString_createRefCStrConst("Vertex position buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, EDeviceBufferUsage_Vertex, EGraphicsResourceFlag_None, name, &vertexData, &twm->vertexBuffers[0]
+		twm->device, positionBufferAs, EGraphicsResourceFlag_None, name, &vertexData, &twm->vertexBuffers[0]
 	));
 
 	vertexData = Buffer_createRefConst(vertDat, sizeof(vertDat));
@@ -775,8 +788,60 @@ void onManagerCreate(WindowManager *manager) {
 	Buffer indexData = Buffer_createRefConst(indexDat, sizeof(indexDat));
 	name = CharString_createRefCStrConst("Index buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, EDeviceBufferUsage_Index, EGraphicsResourceFlag_None, name, &indexData, &twm->indexBuffer
+		twm->device, indexBufferAs, EGraphicsResourceFlag_None, name, &indexData, &twm->indexBuffer
 	));
+
+	//Build BLASes
+
+	if(deviceInfo.capabilities.features & EGraphicsFeatures_Raytracing) {
+
+		//Build BLAS around first quad
+
+		_gotoIfError(clean, GraphicsDeviceRef_createBLASExt(
+			twm->device, 
+			ERTASBuildFlags_DefaultBLAS,
+			EBLASFlag_DisableAnyHit,
+			ETextureFormatId_RG16f, 0,
+			ETextureFormatId_R16u,
+			(U16) sizeof(vertexPos[0]),
+			(DeviceData) { .buffer = twm->vertexBuffers[0] },
+			(DeviceData) { .buffer = twm->indexBuffer, .len = sizeof(U16) * 6 },
+			NULL,
+			CharString_createRefCStrConst("Test BLAS"),
+			&twm->blas
+		));
+
+		//Make simple AABB test
+
+		F32 aabbBuffer[] = {
+
+			-1, -1, -1,		//min 0
+			0, 0, 0,		//max 0
+
+			0, 0, 0,		//min 1
+			1, 1, 1			//max 1
+		};
+
+		Buffer aabbData = Buffer_createRefConst(aabbBuffer, sizeof(aabbBuffer));
+		name = CharString_createRefCStrConst("AABB buffer");
+		_gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+			twm->device, EDeviceBufferUsage_ASReadExt, EGraphicsResourceFlag_None, name, &aabbData, &twm->aabbs
+		));
+
+		_gotoIfError(clean, GraphicsDeviceRef_createBLASProceduralExt(
+			twm->device,
+			ERTASBuildFlags_DefaultBLAS,
+			EBLASFlag_DisableAnyHit,
+			sizeof(F32) * 3 * 2,
+			0,
+			(DeviceData) { .buffer = twm->aabbs },
+			NULL,
+			CharString_createRefCStrConst("Test BLAS AABB"),
+			&twm->blasAABB
+		));
+	}
+
+	//Other shader buffers
 
 	name = CharString_createRefCStrConst("Test shader buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
@@ -900,6 +965,7 @@ void onManagerDestroy(WindowManager *manager) {
 
 	//Delete objects
 
+	DeviceBufferRef_dec(&twm->aabbs);
 	DeviceBufferRef_dec(&twm->vertexBuffers[0]);
 	DeviceBufferRef_dec(&twm->vertexBuffers[1]);
 	DeviceBufferRef_dec(&twm->indexBuffer);
@@ -917,6 +983,9 @@ void onManagerDestroy(WindowManager *manager) {
 
 	ListCommandListRef_freex(&twm->commandLists);
 	ListSwapchainRef_freex(&twm->swapchains);
+
+	BLASRef_dec(&twm->blas);
+	BLASRef_dec(&twm->blasAABB);
 
 	SamplerRef_dec(&twm->nearest);
 	SamplerRef_dec(&twm->linear);
