@@ -132,6 +132,10 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
 	if(isDown) {
 
+		CharString str = Keyboard_remap((EKey) handle);
+		Log_debugLnx("Key press: %s\n", str.ptr);
+		CharString_freex(&str);
+
 		switch ((EKey) handle) {
 
 			//F9 we pause
