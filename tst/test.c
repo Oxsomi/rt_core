@@ -109,11 +109,13 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown);
 void onResize(Window *w);
 void onCreate(Window *w);
 void onDestroy(Window *w);
+void onTypeChar(Window *w, CharString str);
 
 WindowCallbacks TestWindow_getCallbacks() {
 	WindowCallbacks callbacks = (WindowCallbacks) { 0 };
 	callbacks.onDraw = onDraw;
 	callbacks.onUpdate = onUpdate;
+	callbacks.onTypeChar = onTypeChar;
 	callbacks.onDeviceButton = onButton;
 	callbacks.onResize = onResize;
 	callbacks.onCreate = onCreate;
@@ -170,6 +172,11 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 				break;
 		}
 	}
+}
+
+void onTypeChar(Window *w, CharString str) {
+	(void) w;
+	Log_debugLnx("%s", str.ptr);
 }
 
 F32 targetFps = 60;		//Only if virtual window (indicates timestep)
