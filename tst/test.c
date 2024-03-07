@@ -50,6 +50,7 @@
 #include "graphics/generic/device_texture.h"
 #include "graphics/generic/render_texture.h"
 #include "graphics/generic/blas.h"
+#include "graphics/generic/tlas.h"
 #include <stdio.h>
 
 const Bool Platform_useWorkingDirectory = false;
@@ -68,12 +69,13 @@ typedef struct TestWindowManager {
 	DeviceBufferRef *indirectDrawBuffer;			//sizeof(DrawCallIndexed) * 2
 	DeviceBufferRef *indirectDispatchBuffer;		//sizeof(Dispatch) * 2
 	DeviceBufferRef *deviceBuffer;					//Constant F32x3 for animating color
-	DeviceBufferRef *viewProjMatrices;				//F32x4x4 (view, proj, viewProj)
+	DeviceBufferRef *viewProjMatrices;				//F32x4x4 (view, proj, viewProj)(normal, inverse)
 
 	DeviceTextureRef *crabbage2049x, *crabbageCompressed;
 
 	BLASRef *blas;									//If rt is on, the BLAS of a simple plane
 	BLASRef *blasAABB;								//If rt is on, the BLAS of a few boxes
+	TLASRef *tlas;									//If rt is on, contains the scene's AS
 
 	ListPipelineRef computeShaders;
 	ListPipelineRef graphicsShaders;
@@ -87,7 +89,8 @@ typedef struct TestWindowManager {
 
 	F32 timeStep;
 	Bool renderVirtual;
-	U8 pad[3];
+	Bool enableRt;
+	U8 pad[2];
 
 } TestWindowManager;
 
@@ -99,7 +102,7 @@ typedef struct TestWindow {
 	CommandListRef *commandList;
 	RefPtr *swapchain;					//Can be either SwapchainRef (non virtual) or RenderTextureRef (virtual)
 	DepthStencilRef *depthStencil;
-	RenderTextureRef *msaaTexture;
+	RenderTextureRef *renderTexture;
 
 } TestWindow;
 
@@ -228,6 +231,8 @@ void onManagerDraw(WindowManager *windowManager) {
 
 	_gotoIfError(clean, ListCommandListRef_pushBackx(&twm->commandLists, twm->prepCommandList));
 
+	RenderTextureRef *renderTex = NULL;
+
 	for(U64 handle = 0; handle < windowManager->windows.length; ++handle) {
 
 		Window *w = windowManager->windows.ptr[handle];
@@ -238,6 +243,9 @@ void onManagerDraw(WindowManager *windowManager) {
 			TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 			CommandListRef *cmd = tw->commandList;
 			RefPtr *swap = tw->swapchain;
+
+			if(!renderTex)
+				renderTex = tw->renderTexture;
 
 			_gotoIfError(clean, ListCommandListRef_pushBackx(&twm->commandLists, cmd));
 
@@ -257,6 +265,8 @@ void onManagerDraw(WindowManager *windowManager) {
 		U32 viewProjMatricesWrite, viewProjMatricesRead;
 		U32 crabbage2049x, crabbageCompressed;
 		U32 sampler;
+		U32 tlasExt;
+		U32 renderTargetWrite;
 	} RuntimeData;
 
 	DeviceBuffer *viewProjMatrices = DeviceBufferRef_ptr(twm->viewProjMatrices);
@@ -270,8 +280,12 @@ void onManagerDraw(WindowManager *windowManager) {
 		.viewProjMatricesRead = viewProjMatrices->readHandle,
 		.crabbage2049x = TextureRef_getCurrReadHandle(twm->crabbage2049x, 0),
 		.crabbageCompressed = TextureRef_getCurrReadHandle(twm->crabbageCompressed, 0),
-		.sampler = SamplerRef_ptr(twm->anisotropic)->samplerLocation
+		.sampler = SamplerRef_ptr(twm->anisotropic)->samplerLocation,
+		.renderTargetWrite = TextureRef_getCurrWriteHandle(renderTex, 0)
 	};
+
+	if (twm->tlas)
+		data.tlasExt = TLASRef_ptr(twm->tlas)->handle;
 
 	Buffer runtimeData = Buffer_createRefConst((const U32*)&data, sizeof(data));
 	_gotoIfError(clean, GraphicsDeviceRef_submitCommands(
@@ -321,20 +335,20 @@ void onResize(Window *w) {
 	_gotoIfError(clean, GraphicsDeviceRef_createDepthStencil(
 		twm->device,
 		width, height, EDepthStencilFormat_D16, false,
-		EMSAASamples_x4,
+		EMSAASamples_Off,
 		CharString_createRefCStrConst("Test depth stencil"),
 		&tw->depthStencil
 	));
 
-	if(tw->msaaTexture)
-		RefPtr_dec(&tw->msaaTexture);
+	if(tw->renderTexture)
+		RefPtr_dec(&tw->renderTexture);
 
 	_gotoIfError(clean, GraphicsDeviceRef_createRenderTexture(
 		twm->device,
-		ETextureType_2D, width, height, 1, ETextureFormatId_BGRA8, EGraphicsResourceFlag_None,
-		EMSAASamples_x4,
-		CharString_createRefCStrConst("MSAA x4 render texture"),
-		&tw->msaaTexture
+		ETextureType_2D, width, height, 1, ETextureFormatId_BGRA8, EGraphicsResourceFlag_ShaderRW,
+		EMSAASamples_Off,
+		CharString_createRefCStrConst("Render texture"),
+		&tw->renderTexture
 	));
 
 	//Record commands
@@ -344,12 +358,10 @@ void onResize(Window *w) {
 	if(hasSwapchain) {
 
 		typedef enum EScopes {
-			EScopes_GraphicsTest
+			EScopes_RaytracingTest,
+			EScopes_GraphicsTest,
+			EScopes_Copy
 		} EScopes;
-
-		EScopes scopes; (void)scopes;
-
-		//Prepare 2 indirect draw calls and update constant color
 
 		Transition transitions[5] = { 0 };
 		CommandScopeDependency deps[2] = { 0 };
@@ -358,6 +370,38 @@ void onResize(Window *w) {
 		ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
 		_gotoIfError(clean, ListTransition_createRefConst(transitions, 2, &transitionArr));
 		_gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 2, &depsArr));
+
+		//Test raytracing
+
+		Bool hasRaytracing = twm->enableRt;
+
+		if(hasRaytracing) {
+
+			transitions[0] = (Transition) {
+				.resource = twm->tlas,
+				.stage = EPipelineStage_Compute
+			};
+
+			transitions[1] = (Transition) {
+				.resource = twm->viewProjMatrices,
+				.stage = EPipelineStage_Compute
+			};
+
+			transitions[2] = (Transition) {
+				.resource = tw->renderTexture,
+				.stage = EPipelineStage_Compute,
+				.isWrite = true
+			};
+
+			depsArr.length = 0;
+			transitionArr.length = 3;
+
+			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
+				_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 2)));
+				_gotoIfError(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 15) >> 4));
+				_gotoIfError(clean, CommandListRef_endScope(commandList));
+			}
+		}
 
 		//Test graphics pipeline
 
@@ -383,17 +427,17 @@ void onResize(Window *w) {
 
 		transitions[4] = (Transition) { .resource = twm->anisotropic };		//Keep sampler alive
 
-		depsArr.length = 0;
+		deps[0] = (CommandScopeDependency) { .id = EScopes_RaytracingTest };
+		depsArr.length = 1;
 		transitionArr.length = 5;
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
-				.image = tw->msaaTexture,
-				.unusedAfterRender = true,
-				.load = ELoadAttachmentType_Clear,
-				.color = { .colorf = { 0.25f, 0.5f, 1, 1 } },
-				.resolveImage = tw->swapchain
+				.image = tw->renderTexture,
+				.unusedAfterRender = false,
+				.load = hasRaytracing ? ELoadAttachmentType_Preserve : ELoadAttachmentType_Clear,
+				.color = { .colorf = { 0.25f, 0.5f, 1, 1 } }
 			};
 
 			AttachmentInfo depth = (AttachmentInfo) {
@@ -437,6 +481,22 @@ void onResize(Window *w) {
 			_gotoIfError(clean, CommandListRef_endRenderExt(commandList));
 			_gotoIfError(clean, CommandListRef_endScope(commandList));
 		}
+
+		//Copy
+
+		deps[0] = (CommandScopeDependency) { .id = EScopes_RaytracingTest };
+		deps[1] = (CommandScopeDependency) { .id = EScopes_GraphicsTest };
+		depsArr.length = 2;
+		transitionArr.length = 0;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Copy, depsArr).genericError) {
+
+			_gotoIfError(clean, CommandListRef_copyImage(
+				commandList, tw->renderTexture, tw->swapchain, ECopyType_All, (CopyImageRegion) { 0 }
+			));
+
+			_gotoIfError(clean, CommandListRef_endScope(commandList));
+		}
 	}
 
 	_gotoIfError(clean, CommandListRef_end(commandList));
@@ -465,7 +525,7 @@ void onDestroy(Window *w) {
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	RefPtr_dec(&tw->swapchain);
 	DepthStencilRef_dec(&tw->depthStencil);
-	RenderTextureRef_dec(&tw->msaaTexture);
+	RenderTextureRef_dec(&tw->renderTexture);
 	CommandListRef_dec(&tw->commandList);
 }
 
@@ -515,6 +575,8 @@ void onManagerCreate(WindowManager *manager) {
 	GraphicsDeviceInfo_print(&deviceInfo, true);
 
 	_gotoIfError(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, isVerbose, &twm->device));
+
+	twm->enableRt = deviceInfo.capabilities.features & EGraphicsFeatures_RayQuery;
 
 	//Create samplers
 
@@ -600,16 +662,20 @@ void onManagerCreate(WindowManager *manager) {
 		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.main");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[1]));
 
+		path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.main");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[2]));
+
 		CharString nameArr[] = {
 			CharString_createRefCStrConst("Prepare indirect pipeline"),
-			CharString_createRefCStrConst("Indirect compute dispatch")
+			CharString_createRefCStrConst("Indirect compute dispatch"),
+			CharString_createRefCStrConst("Inline raytracing test")
 		};
 
 		ListBuffer binaries = (ListBuffer) { 0 };
 		ListCharString names = (ListCharString) { 0 };
 
-		_gotoIfError(clean, ListBuffer_createRefConst(tempBuffers, 2, &binaries));
-		_gotoIfError(clean, ListCharString_createRefConst(nameArr, 2, &names));
+		_gotoIfError(clean, ListBuffer_createRefConst(tempBuffers, 3, &binaries));
+		_gotoIfError(clean, ListCharString_createRefConst(nameArr, 3, &names));
 
 		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(twm->device, &binaries, names, &twm->computeShaders));
 
@@ -679,7 +745,7 @@ void onManagerCreate(WindowManager *manager) {
 				.attachmentCountExt = 1,
 				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
 				.depthFormatExt = EDepthStencilFormat_D16,
-				.msaa = EMSAASamples_x4,
+				.msaa = EMSAASamples_Off,
 				.msaaMinSampleShading = 0.2f
 			},
 			(PipelineGraphicsInfo) {
@@ -688,7 +754,7 @@ void onManagerCreate(WindowManager *manager) {
 				.attachmentCountExt = 1,
 				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
 				.depthFormatExt = EDepthStencilFormat_D16,
-				.msaa = EMSAASamples_x4,
+				.msaa = EMSAASamples_Off,
 				.msaaMinSampleShading = 0.2f
 			}
 		};
@@ -778,7 +844,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	EDeviceBufferUsage asFlag = (EDeviceBufferUsage) 0;
 
-	if(deviceInfo.capabilities.features & EGraphicsFeatures_Raytracing)
+	if(twm->enableRt)
 		asFlag |= EDeviceBufferUsage_ASReadExt;
 
 	EDeviceBufferUsage positionBufferAs = EDeviceBufferUsage_Vertex | asFlag;
@@ -802,14 +868,14 @@ void onManagerCreate(WindowManager *manager) {
 		twm->device, indexBufferAs, EGraphicsResourceFlag_None, name, &indexData, &twm->indexBuffer
 	));
 
-	//Build BLASes
+	//Build BLASes & TLAS (only if inline RT is available)
 
-	if(deviceInfo.capabilities.features & EGraphicsFeatures_Raytracing) {
+	if(twm->enableRt) {
 
 		//Build BLAS around first quad
 
 		_gotoIfError(clean, GraphicsDeviceRef_createBLASExt(
-			twm->device, 
+			twm->device,
 			ERTASBuildFlags_DefaultBLAS,
 			EBLASFlag_DisableAnyHit,
 			ETextureFormatId_RG16f, 0,
@@ -850,6 +916,37 @@ void onManagerCreate(WindowManager *manager) {
 			CharString_createRefCStrConst("Test BLAS AABB"),
 			&twm->blasAABB
 		));
+
+		//Build TLAS around both BLASes
+
+		TLASInstanceStatic instances[1] = {
+			(TLASInstanceStatic) {
+				.transform = {
+					{ 10, 0, 0, 0 },
+					{ 0, 10, 0, 0 },
+					{ 0, 0, 10, 0 }
+				},
+				.data = (TLASInstanceData) {
+					.blasCpu = twm->blas,
+					.instanceId24_mask8 = (1 << 24),
+					.sbtOffset24_flags8 = (ETLASInstanceFlag_Default << 24)
+				}
+			}
+		};
+
+		ListTLASInstanceStatic instanceList = (ListTLASInstanceStatic) { 0 };
+		_gotoIfError(clean, ListTLASInstanceStatic_createRefConst(
+			instances, sizeof(instances) / sizeof(instances[0]), &instanceList
+		));
+
+		_gotoIfError(clean, GraphicsDeviceRef_createTLASExt(
+			twm->device,
+			ERTASBuildFlags_DefaultTLAS,
+			NULL,
+			instanceList,
+			CharString_createRefCStrConst("Test TLAS"),
+			&twm->tlas
+		));
 	}
 
 	//Other shader buffers
@@ -862,7 +959,7 @@ void onManagerCreate(WindowManager *manager) {
 	name = CharString_createRefCStrConst("View proj matrices buffer");
 	_gotoIfError(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
-		EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRW, name, sizeof(F32x4) * 4 * 3,
+		EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRW, name, sizeof(F32x4) * 4 * 3 * 2,
 		&twm->viewProjMatrices
 	));
 
@@ -995,6 +1092,7 @@ void onManagerDestroy(WindowManager *manager) {
 	ListCommandListRef_freex(&twm->commandLists);
 	ListSwapchainRef_freex(&twm->swapchains);
 
+	TLASRef_dec(&twm->tlas);
 	BLASRef_dec(&twm->blas);
 	BLASRef_dec(&twm->blasAABB);
 
