@@ -33,15 +33,14 @@ void main(U32x2 i : SV_DispatchThreadID) {
 	if(tlasId) {
 
 		RayQuery<
-			RAY_FLAG_NONE
 			//RAY_FLAG_CULL_NON_OPAQUE | 
 			//RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | 
-			//RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+			RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
 		> query;
 
 		//RayDesc ray = { eye, 0, rayDir, 1e6 };
 		
-		RayDesc ray = { F32x3(uv * 10 - 5, -5), 0, F32x3(0, 0, 1), 1e38 };
+		RayDesc ray = { F32x3(-5, uv * 10 - 5), 0, F32x3(1, 0, 0), 1e38 };
 		query.TraceRayInline(tlasExtUniform(tlasId), RAY_FLAG_NONE, -1, ray);
 		query.Proceed();
 

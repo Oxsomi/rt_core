@@ -928,7 +928,7 @@ void onManagerCreate(WindowManager *manager) {
 				},
 				.data = (TLASInstanceData) {
 					.blasCpu = twm->blas,
-					.instanceId24_mask8 = (1 << 24),
+					.instanceId24_mask8 = ((U32)0xFF << 24),
 					.sbtOffset24_flags8 = (ETLASInstanceFlag_Default << 24)
 				}
 			}
