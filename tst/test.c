@@ -357,11 +357,11 @@ void onResize(Window *w) {
 
 	if(hasSwapchain) {
 
-		typedef enum EScopes {
+		enum EScopes {
 			EScopes_RaytracingTest,
 			EScopes_GraphicsTest,
 			EScopes_Copy
-		} EScopes;
+		};
 
 		Transition transitions[5] = { 0 };
 		CommandScopeDependency deps[2] = { 0 };
