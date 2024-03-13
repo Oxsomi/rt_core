@@ -20,32 +20,54 @@
 
 #pragma once
 #include "resources.hlsl"
+#include "ray_basics.hlsl"
 
-enum EResourceBinding {
+//Sphere intersection
 
-	EResourceBinding_ConstantColorBuffer,
-	EResourceBinding_ConstantColorBufferRW,
-	EResourceBinding_IndirectDrawRW,
-	EResourceBinding_IndirectDispatchRW,
+struct Sphere {
 
-	EResourceBinding_ViewProjMatricesRW,
-	EResourceBinding_ViewProjMatrices,
-	EResourceBinding_Crabbage2049x,
-	EResourceBinding_CrabbageCompressed,
+	F32x3 pos;
+	F32 rad;
 
-	EResourceBinding_Sampler,
-	EResourceBinding_TLAS,
-	EResourceBinding_RenderTargetRW,
-	EResourceBinding_Padding,
+	static Sphere create(F32x3 pos, F32 rad) {
+		Sphere s = { pos, rad };
+		return s;
+	}
 
-	EResourceBinding_SunDirXYZ,
-	EResourceBinding_Padding1 = EResourceBinding_SunDirXYZ + 3,
+	Bool intersects(RayDesc ray, out F32x3 outT, out Bool isBackface) {
+	
+		//Fix to increase sphere precision.
+		//Check raytracing gems I: Chapter 7
+		// (https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.4.pdf#0004286892.INDD%3AAnchor%2018%3A18)
+		//and https://iquilezles.org/articles/intersectors/
 
-	EResourceBinding_CamPosXYZ,
-	EResourceBinding_Next = EResourceBinding_CamPosXYZ + 3
-};
+		F32x3 dif = ray.Origin - pos;
+		F32 b = dot(-dif, ray.Direction);
 
-struct ViewProjMatrices {
-	F32x4x4 view, proj, viewProj;
-	F32x4x4 viewInv, projInv, viewProjInv;
+		F32x3 qc = dif + ray.Direction * b;
+
+		F32 rad2 = rad * rad;
+		F32 D = rad2 - dot(qc, qc);
+
+		outT = -1.xxx;
+		isBackface = false;
+
+		if(D < 0)
+			return false;
+
+		F32 q = b + sign(b) * sqrt(D);
+		F32 c = dot(dif, dif) - rad2;
+
+		F32 hitT1 = c / q;
+		F32 hitT2 = q;
+		isBackface = hitT1 < ray.TMin;
+
+		F32 hitT = isBackface ? hitT2 : hitT1;
+
+		if(hitT < ray.TMin || hitT >= ray.TMax)
+			return false;
+
+		outT = F32x3(hitT, isBackface ? ray.TMin : hitT1, hitT2);
+		return true;
+	}
 };

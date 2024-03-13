@@ -18,11 +18,14 @@
 *  This is called dual licensing.
 */
 
-#include "resource_bindings.hlsl"
+#pragma once
+#include "resources.hlsl"
 
-[numthreads(1, 1, 1)]
-void main(U32 i : SV_DispatchThreadID) {
-	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBufferRW);
-	F32x3 col = sin(_time.xxx * F32x3(0.5, 0.25, 0.125)) * 0.5 + 0.5;
-	setAtUniform(resourceId, 0, col);
+RayDesc createRay(F32x3 origin, F32 minT, F32x3 direction, F32 maxT) {
+	RayDesc r = { origin, minT, direction, maxT };
+	return r;
+}
+
+F32x3 posOnRay(RayDesc r, F32 t) {
+	return r.Origin + r.Direction * t;
 }

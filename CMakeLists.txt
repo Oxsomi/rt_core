@@ -49,10 +49,12 @@ else()
 endif()
 
 file(GLOB_RECURSE tests "tst/*.c")
+file(GLOB_RECURSE includes "tst/*.h")
 
 add_executable(
 	rt_core
 	${tests}
+	${includes}
 	CMakeLists.txt
 )
 

@@ -1,4 +1,4 @@
-/* OxC3(Oxsomi core 3), a general framework and toolset for cross platform applications.
+/* OxC3/RT Core(Oxsomi core 3/RT Core), a general framework for raytracing applications.
 *  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
 *
 *  This program is free software: you can redistribute it and/or modify
@@ -51,7 +51,7 @@
 #include "graphics/generic/render_texture.h"
 #include "graphics/generic/blas.h"
 #include "graphics/generic/tlas.h"
-#include <stdio.h>
+#include "atmos_helper.h"
 
 const Bool Platform_useWorkingDirectory = false;
 
@@ -79,6 +79,7 @@ typedef struct TestWindowManager {
 
 	ListPipelineRef computeShaders;
 	ListPipelineRef graphicsShaders;
+	ListPipelineRef raytracingShaders;
 	ListCommandListRef commandLists;
 	ListSwapchainRef swapchains;
 
@@ -91,6 +92,12 @@ typedef struct TestWindowManager {
 	Bool renderVirtual;
 	Bool enableRt;
 	U8 pad[2];
+
+	Ns lastTime;
+
+	F64 JD;
+
+	F32x4 camPos;
 
 } TestWindowManager;
 
@@ -133,6 +140,8 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 	if(device->type != EInputDeviceType_Keyboard)
 		return;
 
+	TestWindowManager *twm = (TestWindowManager*)w->owner->extendedData.ptr;
+
 	if(isDown) {
 
 		CharString str = Keyboard_remap((EKey) handle);
@@ -144,8 +153,8 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 			//F9 we pause
 
 			case EKey_F9: {
-				F32 *ts = &((TestWindowManager*)w->owner->extendedData.ptr)->timeStep;
-				*ts = *ts == 0 ? 1.f : 0;
+				F32 *ts = &twm->timeStep;
+				*ts = *ts == 0 ? 1000.f : 0;
 				break;
 			}
 
@@ -194,6 +203,33 @@ void onUpdate(Window *w, F64 dt) {
 		((TestWindow*)w->extendedData.ptr)->time += dt;
 
 	else ((TestWindow*)w->extendedData.ptr)->time += 1 / targetFps;
+
+	//Check for keys
+
+	F32x4 delta = F32x4_zero();
+
+	for (U64 i = 0; i < w->devices.length; ++i) {
+
+		InputDevice id = w->devices.ptr[i];
+
+		if(id.type != EInputDeviceType_Keyboard)
+			continue;
+
+		I8 x = (I8)InputDevice_isDown(id, EKey_D) - InputDevice_isDown(id, EKey_A);
+		I8 y = (I8)InputDevice_isDown(id, EKey_E) - InputDevice_isDown(id, EKey_Q);
+		I8 z = (I8)InputDevice_isDown(id, EKey_S) - InputDevice_isDown(id, EKey_W);
+
+		delta = F32x4_add(delta, F32x4_create3(x, y, z));
+	}
+
+	if(!F32x4_any(delta))
+		return;
+
+	delta = F32x4_normalize3(delta);
+
+	TestWindowManager *twm = (TestWindowManager*)w->owner->extendedData.ptr;
+
+	twm->camPos = F32x4_add(twm->camPos, F32x4_mul(delta, F32x4_xxxx4((F32)dt)));
 }
 
 void onManagerUpdate(WindowManager *windowManager, F64 dt) {
@@ -213,6 +249,11 @@ void onManagerUpdate(WindowManager *windowManager, F64 dt) {
 	}
 
 	tw->timeSinceLastSecond += dt;
+
+	if(tw->lastTime)
+		tw->lastTime += (Ns)(dt * SECOND * tw->timeStep);
+
+	tw->JD = AtmosHelper_getJulianDate(tw->lastTime);
 }
 
 void onDraw(Window *w) { (void)w; }
@@ -260,16 +301,32 @@ void onManagerDraw(WindowManager *windowManager) {
 	DeviceBuffer *deviceBuf = DeviceBufferRef_ptr(twm->deviceBuffer);
 
 	typedef struct RuntimeData {
+
 		U32 constantColorRead, constantColorWrite;
 		U32 indirectDrawWrite, indirectDispatchWrite;
+
 		U32 viewProjMatricesWrite, viewProjMatricesRead;
 		U32 crabbage2049x, crabbageCompressed;
+
 		U32 sampler;
 		U32 tlasExt;
 		U32 renderTargetWrite;
+		U32 padding0;
+
+		F32 skyDir[3];
+		U32 padding1;
+
+		F32 camPos[3];
+		U32 padding2;
+
 	} RuntimeData;
 
 	DeviceBuffer *viewProjMatrices = DeviceBufferRef_ptr(twm->viewProjMatrices);
+
+	F32x2 amsterdam = F32x2_create2(4.897070f, 52.377956f);
+	F32x4 skyDir = F32x4_negate(AtmosHelper_getSunDir(twm->JD, amsterdam));
+
+	F32x4 camPos = twm->camPos;
 
 	RuntimeData data = (RuntimeData) {
 		.constantColorRead = deviceBuf->readHandle,
@@ -281,8 +338,12 @@ void onManagerDraw(WindowManager *windowManager) {
 		.crabbage2049x = TextureRef_getCurrReadHandle(twm->crabbage2049x, 0),
 		.crabbageCompressed = TextureRef_getCurrReadHandle(twm->crabbageCompressed, 0),
 		.sampler = SamplerRef_ptr(twm->anisotropic)->samplerLocation,
-		.renderTargetWrite = TextureRef_getCurrWriteHandle(renderTex, 0)
+		.renderTargetWrite = TextureRef_getCurrWriteHandle(renderTex, 0),
+		.skyDir = { F32x4_x(skyDir), F32x4_y(skyDir), F32x4_z(skyDir) },
+		.camPos = { F32x4_x(camPos), F32x4_y(camPos), F32x4_z(camPos) }
 	};
+
+	Log_debugLnx("%f %f %f\n", data.skyDir[0], data.skyDir[1], data.skyDir[2]);
 
 	if (twm->tlas)
 		data.tlasExt = TLASRef_ptr(twm->tlas)->handle;
@@ -359,23 +420,26 @@ void onResize(Window *w) {
 
 		enum EScopes {
 			EScopes_RaytracingTest,
+			EScopes_RaytracingPipelineTest,
 			EScopes_GraphicsTest,
 			EScopes_Copy
 		};
 
 		Transition transitions[5] = { 0 };
-		CommandScopeDependency deps[2] = { 0 };
+		CommandScopeDependency deps[3] = { 0 };
 
 		ListTransition transitionArr = (ListTransition) { 0 };
 		ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
-		_gotoIfError(clean, ListTransition_createRefConst(transitions, 2, &transitionArr));
-		_gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 2, &depsArr));
+		_gotoIfError(clean, ListTransition_createRefConst(transitions, 5, &transitionArr));
+		_gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 3, &depsArr));
 
 		//Test raytracing
 
 		Bool hasRaytracing = twm->enableRt;
 
 		if(hasRaytracing) {
+
+			//Write using inline RT
 
 			transitions[0] = (Transition) {
 				.resource = twm->tlas,
@@ -396,14 +460,44 @@ void onResize(Window *w) {
 			depsArr.length = 0;
 			transitionArr.length = 3;
 
-			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
+			//TODO: Enable
+			if(false) { //!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
 				_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 2)));
 				_gotoIfError(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 15) >> 4));
+				_gotoIfError(clean, CommandListRef_endScope(commandList));
+			}
+
+			//Write using raytracing pipelines
+
+			transitions[0] = (Transition) {
+				.resource = twm->tlas,
+				.stage = EPipelineStage_RtStart
+			};
+
+			transitions[1] = (Transition) {
+				.resource = twm->viewProjMatrices,
+				.stage = EPipelineStage_RtStart
+			};
+
+			transitions[2] = (Transition) {
+				.resource = tw->renderTexture,
+				.stage = EPipelineStage_RtStart,
+				.isWrite = true
+			};
+
+			deps[0] = (CommandScopeDependency) { .id = EScopes_RaytracingTest };
+			depsArr.length = 1;
+			transitionArr.length = 3;
+
+			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingPipelineTest, depsArr).genericError) {
+				_gotoIfError(clean, CommandListRef_setRaytracingPipeline(commandList, ListPipelineRef_at(twm->raytracingShaders, 0)));
+				_gotoIfError(clean, CommandListRef_dispatch2DRaysExt(commandList, 0, width, height));
 				_gotoIfError(clean, CommandListRef_endScope(commandList));
 			}
 		}
 
 		//Test graphics pipeline
+
 
 		transitions[0] = (Transition) {
 			.resource = twm->deviceBuffer,
@@ -428,10 +522,12 @@ void onResize(Window *w) {
 		transitions[4] = (Transition) { .resource = twm->anisotropic };		//Keep sampler alive
 
 		deps[0] = (CommandScopeDependency) { .id = EScopes_RaytracingTest };
-		depsArr.length = 1;
+		deps[1] = (CommandScopeDependency) { .id = EScopes_RaytracingPipelineTest };
+		depsArr.length = 2;
 		transitionArr.length = 5;
 
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
+		//TODO: Re-enable
+		if(false) { //!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
 				.image = tw->renderTexture,
@@ -546,8 +642,10 @@ void onManagerCreate(WindowManager *manager) {
 	ListSubResourceData subResource = (ListSubResourceData) { 0 };
 
 	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
-	twm->timeStep = 1;
+	twm->timeStep = 1000;
 	twm->renderVirtual = renderVirtual;
+	twm->lastTime = Time_now();
+	twm->JD = AtmosHelper_getJulianDate(twm->lastTime);
 
 	//Graphics test
 
@@ -576,7 +674,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	_gotoIfError(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, isVerbose, &twm->device));
 
-	twm->enableRt = deviceInfo.capabilities.features & EGraphicsFeatures_RayQuery;
+	twm->enableRt = deviceInfo.capabilities.features & (EGraphicsFeatures_RayQuery | EGraphicsFeatures_RayPipeline);
 
 	//Create samplers
 
@@ -700,24 +798,24 @@ void onManagerCreate(WindowManager *manager) {
 
 			(PipelineStage) {
 				.stageType = EPipelineStage_Vertex,
-				.shaderBinary = tempBuffers[0]
+				.binary = tempBuffers[0]
 			},
 
 			(PipelineStage) {
 				.stageType = EPipelineStage_Pixel,
-				.shaderBinary = tempBuffers[1]
+				.binary = tempBuffers[1]
 			},
 
 			//Pipeline with depth (but still the same pixel shader)
 
 			(PipelineStage) {
 				.stageType = EPipelineStage_Vertex,
-				.shaderBinary = tempBuffers[2]
+				.binary = tempBuffers[2]
 			},
 
 			(PipelineStage) {
 				.stageType = EPipelineStage_Pixel,
-				.shaderBinary = Buffer_createRefFromBuffer(tempBuffers[1], true)
+				.binary = Buffer_createRefFromBuffer(tempBuffers[1], true)
 			}
 		};
 
@@ -772,6 +870,73 @@ void onManagerCreate(WindowManager *manager) {
 
 		_gotoIfError(clean, GraphicsDeviceRef_createPipelinesGraphics(
 			twm->device, &stages, &infos, names, &twm->graphicsShaders
+		));
+
+		tempBuffers[0] = tempBuffers[1] = tempBuffers[2] = Buffer_createNull();
+	}
+
+	//Raytracing pipelines
+
+	{
+		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.rt");
+		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
+
+		PipelineStage stageArr[] = {
+			(PipelineStage) { .stageType = EPipelineStage_ClosestHitExt, .binaryId = 0 },
+			(PipelineStage) { .stageType = EPipelineStage_MissExt, .binaryId = 0 },
+			(PipelineStage) { .stageType = EPipelineStage_RaygenExt, .binaryId = 0 }
+		};
+
+		CharString entrypointArr[] = {
+			CharString_createRefCStrConst("mainClosestHit"),
+			CharString_createRefCStrConst("mainMiss"),
+			CharString_createRefCStrConst("mainRaygen")
+		};
+
+		PipelineRaytracingGroup hitArr[] = {
+			(PipelineRaytracingGroup) { .closestHit = 0, .anyHit = U32_MAX, .intersection = U32_MAX }
+		};
+
+		CharString nameArr[] = {
+			CharString_createRefCStrConst("Raytracing pipeline test")
+		};
+
+		U64 count = sizeof(nameArr) / sizeof(nameArr[0]);
+		U64 entrypointCount = sizeof(stageArr) / sizeof(stageArr[0]);
+		U64 hitCount = sizeof(hitArr) / sizeof(hitArr[0]);
+
+		PipelineRaytracingInfo infoArr[] = {
+			(PipelineRaytracingInfo) {
+
+				(U8) EPipelineRaytracingFlags_Default,
+				16,										//Payload size
+				8,										//Attribute ssize
+				1,										//Recursion
+
+				(U32) entrypointCount,
+				(U32) count,
+				(U32) hitCount
+			}
+		};
+
+		ListBuffer binaries = (ListBuffer) { 0 };
+		ListCharString names = (ListCharString) { 0 };
+		ListPipelineStage stages = (ListPipelineStage) { 0 };
+		ListCharString entrypoints = (ListCharString) { 0 };
+		ListPipelineRaytracingGroup hitGroups = (ListPipelineRaytracingGroup) { 0 };
+		ListPipelineRaytracingInfo infos = (ListPipelineRaytracingInfo) { 0 };
+
+		_gotoIfError(clean, ListBuffer_createRefConst(tempBuffers, count, &binaries));
+		_gotoIfError(clean, ListCharString_createRefConst(nameArr, count, &names));
+		_gotoIfError(clean, ListPipelineRaytracingInfo_createRefConst(infoArr, count, &infos));
+
+		_gotoIfError(clean, ListPipelineStage_createRefConst(stageArr, entrypointCount, &stages));
+		_gotoIfError(clean, ListCharString_createRefConst(entrypointArr, entrypointCount, &entrypoints));
+
+		_gotoIfError(clean, ListPipelineRaytracingGroup_createRefConst(hitArr, hitCount, &hitGroups));
+
+		_gotoIfError(clean, GraphicsDeviceRef_createPipelineRaytracing(
+			twm->device, stages, &binaries, hitGroups, infos, &entrypoints, names, &twm->raytracingShaders
 		));
 
 		tempBuffers[0] = tempBuffers[1] = tempBuffers[2] = Buffer_createNull();
@@ -1023,7 +1188,8 @@ void onManagerCreate(WindowManager *manager) {
 	ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
 	_gotoIfError(clean, ListTransition_createRefConst(transitions, 3, &transitionArr));
 
-	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
+	//TODO: Re-enable
+	if(false) { //!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
 		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)));
 		_gotoIfError(clean, CommandListRef_dispatch1D(commandList, 1));
 		_gotoIfError(clean, CommandListRef_endScope(commandList));
@@ -1049,7 +1215,8 @@ void onManagerCreate(WindowManager *manager) {
 
 	transitionArr.length = 1;
 
-	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
+	//TODO: Re-enable
+	if(false) { //!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
 		_gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)));
 		_gotoIfError(clean, CommandListRef_dispatchIndirect(commandList, twm->indirectDispatchBuffer, 0));
 		_gotoIfError(clean, CommandListRef_endScope(commandList));
@@ -1087,6 +1254,7 @@ void onManagerDestroy(WindowManager *manager) {
 
 	PipelineRef_decAll(&twm->graphicsShaders);
 	PipelineRef_decAll(&twm->computeShaders);
+	PipelineRef_decAll(&twm->raytracingShaders);
 	CommandListRef_dec(&twm->prepCommandList);
 
 	ListCommandListRef_freex(&twm->commandLists);

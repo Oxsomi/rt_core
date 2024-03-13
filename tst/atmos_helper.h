@@ -18,11 +18,17 @@
 *  This is called dual licensing.
 */
 
-#include "resource_bindings.hlsl"
+#pragma once
+#include "types/vec.h"
 
-[numthreads(1, 1, 1)]
-void main(U32 i : SV_DispatchThreadID) {
-	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBufferRW);
-	F32x3 col = sin(_time.xxx * F32x3(0.5, 0.25, 0.125)) * 0.5 + 0.5;
-	setAtUniform(resourceId, 0, col);
-}
+extern const F32 AtmosHelper_au;
+
+F32x4 AtmosHelper_equatorialToCartesian(F32 azimuth, F32 altitude, F32 radius);
+
+F64 AtmosHelper_getJulianDate(Ns time);
+F64 AtmosHelper_getJulianCenturies2000(F64 julianDate);
+
+F32 AtmosHelper_getSolarTime(F64 JD, F32 hoursGmt, F32 longitudeRad);
+
+F32x4 AtmosHelper_getSunDir(F64 JD, F32x2 longitudeLatitudeDeg);
+F32x4 AtmosHelper_getSunPos(F64 JD, F32x2 longitudeLatitudeDeg);

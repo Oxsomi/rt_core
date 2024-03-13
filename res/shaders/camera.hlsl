@@ -18,11 +18,28 @@
 *  This is called dual licensing.
 */
 
-#include "resource_bindings.hlsl"
+#include "resources.hlsl"
+#include "ray_basics.hlsl"
 
-[numthreads(1, 1, 1)]
-void main(U32 i : SV_DispatchThreadID) {
-	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBufferRW);
-	F32x3 col = sin(_time.xxx * F32x3(0.5, 0.25, 0.125)) * 0.5 + 0.5;
-	setAtUniform(resourceId, 0, col);
-}
+//Generating camera rays using a vInv and vpInv
+
+struct Camera {
+
+	F32x4x4 v, p, vp;
+	F32x4x4 vInv, pInv, vpInv;
+
+	RayDesc getRay(U32x2 id, U32x2 dims) {
+
+		//Generate primaries
+	
+		F32x2 uv = (F32x2(id) + 0.5) / F32x2(dims);
+		uv.y = 1 - uv.y;
+
+		F32x3 eye = mul(F32x4(0.xxx, 1), vInv).xyz;
+
+		F32x3 rayDest = mul(F32x4(uv * 2 - 1, 1, 1), vpInv).xyz;
+		F32x3 rayDir = normalize(rayDest - eye);
+	
+		return createRay(eye, 0, rayDir, 1e6);		//1e6 limit is to please NV drivers
+	}
+};
