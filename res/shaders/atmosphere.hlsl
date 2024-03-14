@@ -166,7 +166,7 @@ struct Atmosphere {
 		F32x3 pos = norm * height;                                 //TODO: For this, position and camera have to be changed!
 		ray.Origin += pos;*/
 
-		ray.Origin += float3(0, planetRadius + 0.5, 0);
+		ray.Origin += float3(0, planetRadius + 10, 0);
 
 		//Get start and end intersection
 

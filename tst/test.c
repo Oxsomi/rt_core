@@ -135,6 +135,8 @@ WindowCallbacks TestWindow_getCallbacks() {
 
 //Functions
 
+static const F32 timestep = 10000;
+
 void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
 	if(device->type != EInputDeviceType_Keyboard)
@@ -154,7 +156,7 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
 			case EKey_F9: {
 				F32 *ts = &twm->timeStep;
-				*ts = *ts == 0 ? 1000.f : 0;
+				*ts = *ts == 0 ? timestep : 0;
 				break;
 			}
 
@@ -207,6 +209,7 @@ void onUpdate(Window *w, F64 dt) {
 	//Check for keys
 
 	F32x4 delta = F32x4_zero();
+	Bool anyShiftDown = false;
 
 	for (U64 i = 0; i < w->devices.length; ++i) {
 
@@ -219,6 +222,13 @@ void onUpdate(Window *w, F64 dt) {
 		I8 y = (I8)InputDevice_isDown(id, EKey_E) - InputDevice_isDown(id, EKey_Q);
 		I8 z = (I8)InputDevice_isDown(id, EKey_S) - InputDevice_isDown(id, EKey_W);
 
+		x += (I8)InputDevice_isDown(id, EKey_Right) - InputDevice_isDown(id, EKey_Left);
+		y += (I8)InputDevice_isDown(id, EKey_Numpad0) - InputDevice_isDown(id, EKey_RCtrl);
+		z += (I8)InputDevice_isDown(id, EKey_Down) - InputDevice_isDown(id, EKey_Up);
+
+		if(InputDevice_isDown(id, EKey_LShift) || InputDevice_isDown(id, EKey_RShift))
+			anyShiftDown = true;
+
 		delta = F32x4_add(delta, F32x4_create3(x, y, z));
 	}
 
@@ -227,9 +237,14 @@ void onUpdate(Window *w, F64 dt) {
 
 	delta = F32x4_normalize3(delta);
 
+	F32 mul = (F32)dt;
+
+	if(anyShiftDown)
+		mul *= 10;
+
 	TestWindowManager *twm = (TestWindowManager*)w->owner->extendedData.ptr;
 
-	twm->camPos = F32x4_add(twm->camPos, F32x4_mul(delta, F32x4_xxxx4((F32)dt)));
+	twm->camPos = F32x4_add(twm->camPos, F32x4_mul(delta, F32x4_xxxx4(mul)));
 }
 
 void onManagerUpdate(WindowManager *windowManager, F64 dt) {
@@ -342,8 +357,6 @@ void onManagerDraw(WindowManager *windowManager) {
 		.skyDir = { F32x4_x(skyDir), F32x4_y(skyDir), F32x4_z(skyDir) },
 		.camPos = { F32x4_x(camPos), F32x4_y(camPos), F32x4_z(camPos) }
 	};
-
-	Log_debugLnx("%f %f %f\n", data.skyDir[0], data.skyDir[1], data.skyDir[2]);
 
 	if (twm->tlas)
 		data.tlasExt = TLASRef_ptr(twm->tlas)->handle;
@@ -642,7 +655,7 @@ void onManagerCreate(WindowManager *manager) {
 	ListSubResourceData subResource = (ListSubResourceData) { 0 };
 
 	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
-	twm->timeStep = 1000;
+	twm->timeStep = timestep;
 	twm->renderVirtual = renderVirtual;
 	twm->lastTime = Time_now();
 	twm->JD = AtmosHelper_getJulianDate(twm->lastTime);
@@ -935,7 +948,7 @@ void onManagerCreate(WindowManager *manager) {
 
 		_gotoIfError(clean, ListPipelineRaytracingGroup_createRefConst(hitArr, hitCount, &hitGroups));
 
-		_gotoIfError(clean, GraphicsDeviceRef_createPipelineRaytracing(
+		_gotoIfError(clean, GraphicsDeviceRef_createPipelineRaytracingExt(
 			twm->device, stages, &binaries, hitGroups, infos, &entrypoints, names, &twm->raytracingShaders
 		));
 
@@ -1082,7 +1095,7 @@ void onManagerCreate(WindowManager *manager) {
 			&twm->blasAABB
 		));
 
-		//Build TLAS around both BLASes
+		//Build TLAS around BLAS
 
 		TLASInstanceStatic instances[1] = {
 			(TLASInstanceStatic) {

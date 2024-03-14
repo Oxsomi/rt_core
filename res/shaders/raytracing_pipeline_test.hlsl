@@ -49,7 +49,11 @@ void mainClosestHit(inout ColorPayload payload, BuiltInTriangleIntersectionAttri
 
 	F32x3 sunDir = getAppData3f(EResourceBinding_SunDirXYZ);
 
-	payload.color = Atmosphere::earth(sunDir).getSunContribution(F32x3(0, 0, 1)) * F32x3(expandBary(attr.barycentrics));
+	F32x3 diffuse = Atmosphere::earth(sunDir).getSunContribution(F32x3(0, 0, 1)) * F32x3(expandBary(attr.barycentrics));
+
+	F32x3 emissive = 100000 * F32x3(0, 0, 1);
+
+	payload.color = diffuse + emissive;
 
 	payload.hitT = RayTCurrent();
 }
@@ -105,7 +109,7 @@ void mainRaygen() {
 
 	Sphere sphere = (Sphere) 0;
 	sphere.pos = F32x3(0, 0, -1);		//1 unit behind our traced object
-	sphere.rad = 0.05;
+	sphere.rad = 1;
 
 	F32x3 tmp = F32x3(payload.hitT, 0.xx);
 	Bool isBackSide;
