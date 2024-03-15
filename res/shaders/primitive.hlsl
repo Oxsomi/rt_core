@@ -71,3 +71,51 @@ struct Sphere {
 		return true;
 	}
 };
+
+struct Quad {
+
+	F32x3 p0, right, up;
+	F32x3 N;
+
+	static Quad create(F32x3 p0, F32x3 right, F32x3 up) {
+		Quad q;
+		q.p0 = p0;
+		q.right = right;
+		q.up = up;
+		q.N = cross(normalize(up), normalize(right));
+		return q;
+	}
+
+	Bool intersects(RayDesc ray, inout F32 outT, inout F32x2 outUv, inout F32x3 planeNormal) {
+
+		//Intersect
+
+		F32x4 plane = F32x4(N, -dot(N, p0));
+		F32 dif = dot(ray.Direction, -plane.xyz);
+
+		if(dif == 0)
+			return false;
+
+		F32 hitT = dot(F32x4(ray.Origin, 1), plane) / dif;
+
+		if(hitT < ray.TMin || hitT >= ray.TMax)
+			return false;
+			
+		F32x3 pos = posOnRay(ray, hitT);
+
+		F32x2 uv = F32x2(dot(pos, right), dot(pos, up));
+		F32x2 leftUv = F32x2(dot(p0, right), dot(p0, up));
+		F32x2 delta = uv - leftUv;
+
+		if(any((delta >= 1) | (delta < 0)))
+			return false;
+
+		delta.y = 1 - delta.y;
+
+		outT = hitT;
+		outUv = delta;
+		planeNormal = dif < 0 ? -N : N;
+
+		return true;
+	}
+};
