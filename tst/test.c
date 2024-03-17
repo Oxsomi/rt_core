@@ -890,7 +890,8 @@ void onManagerCreate(WindowManager *manager) {
 
 	//Raytracing pipelines
 
-	{
+	if (twm->enableRt) {
+		
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.rt");
 		_gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]));
 
