@@ -27,7 +27,7 @@ const F32 AtmosHelper_au = 1.496e11f;
 
 F32x4 AtmosHelper_equatorialToCartesian(F32 azimuth, F32 altitude, F32 radius) {
 
-	F32 cosAltitude = F32_cos(altitude);
+	const F32 cosAltitude = F32_cos(altitude);
 
 	return F32x4_mul(F32x4_create3(
 		cosAltitude * F32_sin(azimuth),
@@ -45,13 +45,13 @@ F64 AtmosHelper_getJulianDate(Ns time) {
 	if(!Time_getDate(time, &year, &month, &day, &hour, &minute, &second, &ns, false))
 		return -1;
 
-	F64 seconds = 65 + second + ns / (F64)SECOND;
-	F64 minutes = minute + seconds / 60;
-	F64 hours = hour + minutes / 60;
-	F64 days = day + hours / 24;
+	const F64 seconds = 65 + second + ns / (F64)SECOND;
+	const F64 minutes = minute + seconds / 60;
+	const F64 hours = hour + minutes / 60;
+	const F64 days = day + hours / 24;
 
-	F64 monthAdj = month <= 2 ? month + 12 : month;
-	F64 yearAdj = month <= 2 ? year - 1 : year;
+	const F64 monthAdj = month <= 2 ? month + 12 : month;
+	const F64 yearAdj = month <= 2 ? year - 1 : year;
 
 	F64 julianDate = days + F64_floor(30.6001 * (monthAdj + 1));
 	julianDate += F64_floor(365.25 * yearAdj);
@@ -74,22 +74,22 @@ F32 AtmosHelper_getSolarTime(F64 JD, F32 hoursGmt, F32 longitudeRad) {
 
 F32x4 AtmosHelper_getSunPosInternal(F64 JD, F32x2 longitudeLatitudeDeg, F32 rad) {
 
-	F32x2 longitudeLatitudeRad = F32x2_mul(longitudeLatitudeDeg, F32x2_xx2(F32_DEG_TO_RAD));
+	const F32x2 longitudeLatitudeRad = F32x2_mul(longitudeLatitudeDeg, F32x2_xx2(F32_DEG_TO_RAD));
 
-	F32 longitudeRad = F32x2_x(longitudeLatitudeRad);
-	F32 latitudeRad = F32x2_y(longitudeLatitudeRad);
+	const F32 longitudeRad = F32x2_x(longitudeLatitudeRad);
+	const F32 latitudeRad = F32x2_y(longitudeLatitudeRad);
 
-	F32 solarTime = AtmosHelper_getSolarTime(JD, (F32) F64_fract(JD - .5) * 24, longitudeRad);
-	F32 solarTimePi12th = F32_PI * solarTime / 12;
+	const F32 solarTime = AtmosHelper_getSolarTime(JD, (F32) F64_fract(JD - .5) * 24, longitudeRad);
+	const F32 solarTimePi12th = F32_PI * solarTime / 12;
 
-	F32 declination = 0.4093f * (F32) F64_sin(2 * F64_PI * (JD - 81) / 368);
-	F32 azimuth = 
+	const F32 declination = 0.4093f * (F32) F64_sin(2 * F64_PI * (JD - 81) / 368);
+	const F32 azimuth = 
 		F32_PI / 2 - F32_asin(
 			F32_sin(latitudeRad) * F32_sin(declination) - 
 			F32_cos(latitudeRad) * F32_cos(declination) * F32_cos(solarTimePi12th)
 		);
 
-	F32 altitude = F32_atan(
+	const F32 altitude = F32_atan(
 		-F32_cos(declination) * F32_sin(solarTimePi12th) / (
 			F32_cos(latitudeRad) * F32_sin(declination) -
 			F32_sin(latitudeRad) * F32_cos(declination) * F32_cos(solarTimePi12th)
