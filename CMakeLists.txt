@@ -66,7 +66,7 @@ message("-- Targeting ${shaderBinary}")
 
 add_virtual_files(
 	TARGET rt_core NAME shaders
-	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/${shaderBinary}
+	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/compiled/${shaderBinary}
 	SELF ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
