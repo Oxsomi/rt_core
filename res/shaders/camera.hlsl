@@ -31,7 +31,7 @@ struct Camera {
 	RayDesc getRay(U32x2 id, U32x2 dims) {
 
 		//Generate primaries
-	
+
 		F32x2 uv = (F32x2(id) + 0.5) / F32x2(dims);
 		uv.y = 1 - uv.y;
 
@@ -39,7 +39,7 @@ struct Camera {
 
 		F32x3 rayDest = mul(F32x4(uv * 2 - 1, 1, 1), vpInv).xyz;
 		F32x3 rayDir = normalize(rayDest - eye);
-	
+
 		return createRay(eye, 0, rayDir, 1e6);		//1e6 limit is to please NV drivers
 	}
 };

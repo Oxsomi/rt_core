@@ -83,9 +83,9 @@ F32x4 AtmosHelper_getSunPosInternal(F64 JD, F32x2 longitudeLatitudeDeg, F32 rad)
 	const F32 solarTimePi12th = F32_PI * solarTime / 12;
 
 	const F32 declination = 0.4093f * (F32) F64_sin(2 * F64_PI * (JD - 81) / 368);
-	const F32 azimuth = 
+	const F32 azimuth =
 		F32_PI / 2 - F32_asin(
-			F32_sin(latitudeRad) * F32_sin(declination) - 
+			F32_sin(latitudeRad) * F32_sin(declination) -
 			F32_cos(latitudeRad) * F32_cos(declination) * F32_cos(solarTimePi12th)
 		);
 

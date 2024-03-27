@@ -25,14 +25,14 @@ void main(U32x2 i : SV_DispatchThreadID) {
 
 	RWTexture2D<unorm F32x4> tex = rwTexture2DUniform(getAppData1u(EResourceBinding_RenderTargetRW));
 
-	U32x2 dims; 
+	U32x2 dims;
 	tex.GetDimensions(dims.x, dims.y);
 
 	if(any(i >= dims))
 		return;
 
 	//Generate primaries
-	
+
 	U32 viewProjMat = getAppData1u(EResourceBinding_ViewProjMatrices);
 	ViewProjMatrices mats = getAtUniform<ViewProjMatrices>(viewProjMat, 0);
 
@@ -53,19 +53,19 @@ void main(U32x2 i : SV_DispatchThreadID) {
 	if(tlasId) {
 
 		RayQuery<
-			//RAY_FLAG_CULL_NON_OPAQUE | 
-			//RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | 
+			//RAY_FLAG_CULL_NON_OPAQUE |
+			//RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES |
 			RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
 		> query;
 
 		//RayDesc ray = { eye, 0, rayDir, 1e6 };
-		
+
 		RayDesc ray = { F32x3(-5, uv * 10 - 5), 0, F32x3(1, 0, 0), 1e38 };
 		query.TraceRayInline(tlasExtUniform(tlasId), RAY_FLAG_NONE, -1, ray);
 		query.Proceed();
 
 		//Triangle hit
-		
+
 		if (query.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
 			color = F32x3(1, 0, 0);
 

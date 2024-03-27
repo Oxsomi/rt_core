@@ -33,7 +33,7 @@ struct Atmosphere {
 
 	F32x3 sunRadianceNits;
 	U32 raySamples;
-	
+
 	F32x3 ozoneCoefficient;
 	U32 lightSamples;
 
@@ -50,7 +50,7 @@ struct Atmosphere {
 	//Scattering density and phase functions
 
 	F32 getDensity(F32x3 pos, F32 rayLen, ScatteringType type) {
-	
+
 		F32 dist = length(pos) - planetRadius;
 
 		if(dist <= 0)
@@ -58,7 +58,7 @@ struct Atmosphere {
 
 		return rayLen * exp(-dist / type.scaleHeight);
 	}
-	
+
 	static F32 rayleighPhaseFunction(F32 LoV) {
 		return 3.f / (16 * F32_pi) * (1 + pow(LoV, 2));
 	}
@@ -78,7 +78,7 @@ struct Atmosphere {
 		a.lightSamples = 8;
 		a.planetRadius = 6371000;
 		a.atmosphereRadius = a.planetRadius + 80000;
-	
+
 		F32 sunSolidAngle = 0.0000711;                                    //In steradian
 
 		a.sunRadianceLux = F32x3(255, 244, 234) / 255 * 120000;       //5900K at 120k lux
@@ -101,7 +101,7 @@ struct Atmosphere {
 
 	Bool getOpticalDepthLight(
 		F32x3 pos,
-		ScatteringType rayleigh, ScatteringType mie, 
+		ScatteringType rayleigh, ScatteringType mie,
 		out F32 rayleighDepth, out F32 mieDepth
 	) {
 
@@ -126,12 +126,12 @@ struct Atmosphere {
 		for(; i < lightSamples; ++i) {
 
 			F32x3 pos = posOnRay(ray, start + step * (i + 0.5));
-			
+
 			F32 dist = length(pos) - planetRadius;
 
 			//if(dist <= 0)
 			//	break;
-				
+
 			rayleighDepth += getDensity(pos, step, rayleigh);
 			mieDepth += getDensity(pos, step, mie);
 		}
@@ -148,7 +148,7 @@ struct Atmosphere {
 		//We should remap the relative position to a real position:
 		//To do this, we will map y relative to the sphere's surface, while remapping x/z to long/lat.
 		//We will remap the pos relative to the center of Iceland.
-		
+
 		/*
 		F32x3 relativePos = ray.Origin;
 
@@ -177,7 +177,7 @@ struct Atmosphere {
 			if(earth.intersects(ray, intersections, isBackside))
 				ray.TMax = intersections.x;
 		}
-		
+
 		F32x3 earthNrm = normalize(posOnRay(ray, ray.TMax));
 		F32x3 earthShading = getSunContribution(earthNrm);
 
@@ -186,13 +186,13 @@ struct Atmosphere {
 		F32x3 intersections; Bool isBackside;
 		if(!atmos.intersects(ray, intersections, isBackside))
 			return earthShading;
-			
+
 		F32 start = intersections.y;
-		F32 diff = intersections.z - start; 
+		F32 diff = intersections.z - start;
 
 		//Raymarch through the start + end regions
 		F32 step = diff / raySamples;
-	
+
 		F32x4 sumRayleigh = 0.xxxx, sumMie = 0.xxxx;
 
 		for(U32 i = 0; i < raySamples; ++i) {

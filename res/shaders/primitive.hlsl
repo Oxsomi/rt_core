@@ -35,7 +35,7 @@ struct Sphere {
 	}
 
 	Bool intersects(RayDesc ray, out F32x3 outT, out Bool isBackface) {
-	
+
 		//Fix to increase sphere precision.
 		//Check raytracing gems I: Chapter 7
 		// (https://www.realtimerendering.com/raytracinggems/unofficial_RayTracingGems_v1.4.pdf#0004286892.INDD%3AAnchor%2018%3A18)
@@ -100,7 +100,7 @@ struct Quad {
 
 		if(hitT < ray.TMin || hitT >= ray.TMax)
 			return false;
-			
+
 		F32x3 pos = posOnRay(ray, hitT);
 
 		F32x2 uv = F32x2(dot(pos, right), dot(pos, up));

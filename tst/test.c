@@ -53,6 +53,16 @@
 #include "atmos_helper.h"
 #include "types/math.h"
 
+#include <stdint.h>
+#include "d3d12.h"
+__declspec(dllexport) extern const uint32_t D3D12SDKVersion = D3D12_SDK_VERSION;
+__declspec(dllexport) extern const char *D3D12SDKPath = "./D3D12/";
+
+#undef min
+#undef max
+#undef near
+#undef far
+
 const Bool Platform_useWorkingDirectory = false;
 
 //Globals
@@ -674,22 +684,19 @@ void onManagerCreate(WindowManager *manager) {
 	GraphicsDeviceCapabilities requiredCapabilities = (GraphicsDeviceCapabilities) { 0 };
 	GraphicsDeviceInfo deviceInfo = (GraphicsDeviceInfo) { 0 };
 
-	Bool isVerbose = false;
-
-	gotoIfError(clean, GraphicsInstance_create(applicationInfo, isVerbose, &twm->instance))
+	gotoIfError(clean, GraphicsInstance_create(applicationInfo, EGraphicsInstanceFlags_None, &twm->instance))
 
 	gotoIfError(clean, GraphicsInstance_getPreferredDevice(
 		GraphicsInstanceRef_ptr(twm->instance),
 		requiredCapabilities,
 		GraphicsInstance_vendorMaskAll,
 		GraphicsInstance_deviceTypeAll,
-		isVerbose,
 		&deviceInfo
 	))
 
-	GraphicsDeviceInfo_print(&deviceInfo, true);
+	GraphicsDeviceInfo_print(GraphicsInstanceRef_ptr(twm->instance)->api, &deviceInfo, true);
 
-	gotoIfError(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, isVerbose, &twm->device))
+	gotoIfError(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, EGraphicsDeviceFlags_None, &twm->device))
 
 	twm->enableRt = deviceInfo.capabilities.features & (EGraphicsFeatures_RayQuery | EGraphicsFeatures_RayPipeline);
 
@@ -895,7 +902,7 @@ void onManagerCreate(WindowManager *manager) {
 	//Raytracing pipelines
 
 	if (twm->enableRt) {
-		
+
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.rt");
 		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]))
 
