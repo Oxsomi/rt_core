@@ -563,11 +563,11 @@ void onResize(Window *w) {
 				.color = { .colorf = { 0.25f, 0.5f, 1, 1 } }
 			};
 
-			AttachmentInfo depth = (AttachmentInfo) {
+			DepthStencilAttachmentInfo depthStencil = (DepthStencilAttachmentInfo) {
 				.image = tw->depthStencil,
-				.unusedAfterRender = true,
-				.load = ELoadAttachmentType_Clear,
-				.color = (ClearColor) { .colorf = { 0 } }
+				.depthUnusedAfterRender = true,
+				.depthLoad = ELoadAttachmentType_Clear,
+				.clearDepth = 0
 			};
 
 			ListAttachmentInfo colors = (ListAttachmentInfo) { 0 };
@@ -576,7 +576,7 @@ void onResize(Window *w) {
 			//Start render
 
 			gotoIfError(clean, CommandListRef_startRenderExt(
-				commandList, I32x2_zero(), I32x2_zero(), colors, depth, (AttachmentInfo) { 0 }
+				commandList, I32x2_zero(), I32x2_zero(), colors, depthStencil
 			))
 
 			gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()))
@@ -593,7 +593,7 @@ void onResize(Window *w) {
 
 			gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers))
 			gotoIfError(clean, CommandListRef_drawIndexed(commandList, 6, 1))
-			gotoIfError(clean, CommandListRef_drawIndirect(commandList, twm->indirectDrawBuffer, 0, 0, 2, true))
+			gotoIfError(clean, CommandListRef_drawIndirect(commandList, twm->indirectDrawBuffer, 0, 2, true))
 
 			//Draw with depth
 
