@@ -53,15 +53,7 @@
 #include "atmos_helper.h"
 #include "types/math.h"
 
-#include <stdint.h>
-#include "d3d12.h"
-__declspec(dllexport) extern const uint32_t D3D12SDKVersion = D3D12_SDK_VERSION;
-__declspec(dllexport) extern const char *D3D12SDKPath = "./D3D12/";
-
-#undef min
-#undef max
-#undef near
-#undef far
+#include "graphics/generic/application.h"
 
 const Bool Platform_useWorkingDirectory = false;
 
@@ -483,8 +475,7 @@ void onResize(Window *w) {
 			depsArr.length = 0;
 			transitionArr.length = 3;
 
-			//TODO: Enable
-			if(false) { //!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
+			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
 				gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 2)))
 				gotoIfError(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 15) >> 4))
 				gotoIfError(clean, CommandListRef_endScope(commandList))
@@ -553,8 +544,7 @@ void onResize(Window *w) {
 		depsArr.length = 2;
 		transitionArr.length = 5;
 
-		//TODO: Re-enable
-		if(false) { //!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
 				.image = tw->renderTexture,
@@ -796,8 +786,8 @@ void onManagerCreate(WindowManager *manager) {
 		ListBuffer binaries = (ListBuffer) { 0 };
 		ListCharString names = (ListCharString) { 0 };
 
-		gotoIfError(clean, ListBuffer_createRefConst(tempBuffers, 3, &binaries))
-		gotoIfError(clean, ListCharString_createRefConst(nameArr, 3, &names))
+		gotoIfError(clean, ListBuffer_createRefConst(tempBuffers, 2 + twm->enableRt, &binaries))
+		gotoIfError(clean, ListCharString_createRefConst(nameArr, 2 + twm->enableRt, &names))
 
 		gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(twm->device, &binaries, names, &twm->computeShaders))
 
@@ -1213,8 +1203,7 @@ void onManagerCreate(WindowManager *manager) {
 	ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
 	gotoIfError(clean, ListTransition_createRefConst(transitions, 3, &transitionArr))
 
-	//TODO: Re-enable
-	if(false) { //!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
+	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
 		gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)))
 		gotoIfError(clean, CommandListRef_dispatch1D(commandList, 1))
 		gotoIfError(clean, CommandListRef_endScope(commandList))
@@ -1240,8 +1229,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	transitionArr.length = 1;
 
-	//TODO: Re-enable
-	if(false) { //!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
+	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
 		gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)))
 		gotoIfError(clean, CommandListRef_dispatchIndirect(commandList, twm->indirectDispatchBuffer, 0))
 		gotoIfError(clean, CommandListRef_endScope(commandList))
