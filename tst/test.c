@@ -627,7 +627,7 @@ void onCreate(Window *w) {
 
 	if(w->type != EWindowType_Virtual) {
 		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w };
-		gotoIfError(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, true, &tw->swapchain))
+		gotoIfError(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, false, &tw->swapchain))
 	}
 
 clean:
