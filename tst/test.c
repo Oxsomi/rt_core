@@ -774,8 +774,10 @@ void onManagerCreate(WindowManager *manager) {
 		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.main");
 		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[1]))
 
-		path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.main");
-		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[2]))
+		if (twm->enableRt) {
+			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.main");
+			gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[2]))
+		}
 
 		CharString nameArr[] = {
 			CharString_createRefCStrConst("Prepare indirect pipeline"),
