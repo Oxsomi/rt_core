@@ -1,5 +1,5 @@
 /* OxC3/RT Core(Oxsomi core 3/RT Core), a general framework for raytracing applications.
-*  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
+*  Copyright (C) 2023 - 2024 Oxsomi / Nielsbishere (Niels Brunekreef)
 *
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 #include "resource_bindings.hlsl"
 
+[shader("compute")]
 [numthreads(1, 1, 1)]
 void main(U32 i : SV_DispatchThreadID) {
 	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBufferRW);

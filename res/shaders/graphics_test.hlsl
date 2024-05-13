@@ -1,5 +1,5 @@
 /* OxC3/RT Core(Oxsomi core 3/RT Core), a general framework for raytracing applications.
-*  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
+*  Copyright (C) 2023 - 2024 Oxsomi / Nielsbishere (Niels Brunekreef)
 *
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ struct VSOutput {
 	F32x2 uv : _bind(0);
 };
 
+[shader("vertex")]
 VSOutput mainVS(F32x2 pos : _bind(0), F32x2 uv : _bind(1)) {
 	VSOutput output = (VSOutput) 0;
 	output.pos = F32x4(pos, 0, 1);
@@ -34,6 +35,7 @@ VSOutput mainVS(F32x2 pos : _bind(0), F32x2 uv : _bind(1)) {
 	return output;
 }
 
+[shader("pixel")]
 F32x4 mainPS(VSOutput input): SV_TARGET {
 
 	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBuffer);

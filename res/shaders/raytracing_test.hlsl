@@ -1,5 +1,5 @@
 /* OxC3/RT Core(Oxsomi core 3/RT Core), a general framework for raytracing applications.
-*  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
+*  Copyright (C) 2023 - 2024 Oxsomi / Nielsbishere (Niels Brunekreef)
 *
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
@@ -20,7 +20,8 @@
 
 #include "resource_bindings.hlsl"
 
-[numthreads(16, 16, 1)]
+[shader("compute")]
+[numthreads(16, 8, 1)]
 void main(U32x2 i : SV_DispatchThreadID) {
 
 	RWTexture2D<unorm F32x4> tex = rwTexture2DUniform(getAppData1u(EResourceBinding_RenderTargetRW));
@@ -60,8 +61,8 @@ void main(U32x2 i : SV_DispatchThreadID) {
 
 		//RayDesc ray = { eye, 0, rayDir, 1e6 };
 
-		RayDesc ray = { F32x3(-5, uv * 10 - 5), 0, F32x3(1, 0, 0), 1e38 };
-		query.TraceRayInline(tlasExtUniform(tlasId), RAY_FLAG_NONE, -1, ray);
+		RayDesc ray = { F32x3(uv * 10 - 5, 5), 0, F32x3(0, 0, -1), 1e6 };
+		query.TraceRayInline(tlasExtUniform(tlasId), RAY_FLAG_NONE, 0xFF, ray);
 		query.Proceed();
 
 		//Triangle hit

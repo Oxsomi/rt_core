@@ -1,5 +1,5 @@
 /* OxC3/RT Core(Oxsomi core 3/RT Core), a general framework for raytracing applications.
-*  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
+*  Copyright (C) 2023 - 2024 Oxsomi / Nielsbishere (Niels Brunekreef)
 *
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
@@ -21,6 +21,10 @@
 #pragma once
 #include "types/vec.h"
 
+#ifdef __cplusplus
+	extern "C" {
+#endif
+
 extern const F32 AtmosHelper_au;
 
 F32x4 AtmosHelper_equatorialToCartesian(F32 azimuth, F32 altitude, F32 radius);
@@ -32,3 +36,7 @@ F32 AtmosHelper_getSolarTime(F64 JD, F32 hoursGmt, F32 longitudeRad);
 
 F32x4 AtmosHelper_getSunDir(F64 JD, F32x2 longitudeLatitudeDeg);
 F32x4 AtmosHelper_getSunPos(F64 JD, F32x2 longitudeLatitudeDeg);
+
+#ifdef __cplusplus
+	}
+#endif

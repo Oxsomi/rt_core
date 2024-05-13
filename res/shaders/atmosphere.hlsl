@@ -1,5 +1,5 @@
 /* OxC3/RT Core(Oxsomi core 3/RT Core), a general framework for raytracing applications.
-*  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
+*  Copyright (C) 2023 - 2024 Oxsomi / Nielsbishere (Niels Brunekreef)
 *
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
@@ -19,8 +19,46 @@
 */
 
 #pragma once
-#include "resources.hlsl"
+#include "//resources.hlsl"
 #include "primitive.hlsl"
+
+static const U32 test0	= 0x123;
+static const U32 test1	= 0123;
+static const U32 test2	= 0b101;
+static const U32 test3	= 123;
+static const F32 test4	= 123.;
+static const F32 test5	= 123.f;
+static const F32 test6	= 0.f;
+static const F32 test7	= 0.0f;
+static const F32 test8	= 0.0;
+static const F32 test9	= 0123.f;
+static const F32 testA	= 3.4f;
+static const F32 testB	= 3.4e-4f;
+static const F32 testC	= 3.4e-4;
+static const F32 testD	= 3.4e+4;
+static const F32 testE	= 3.4e+4f;
+static const F32 testF	= .4f;
+static const F32 test10	= .4;
+static const F32 test11	= .4e+5;
+static const F32 test12	= .4e-5;
+
+static const I32 test13	= -123;
+static const U32 test14	= +123;
+static const F32 test15	= 0e1;
+static const F32 test16	= 0f;
+static const U32 test17	= 0;
+static const U32 test18	= 1;
+static const U32 test19	= 9;
+static const U32 test1A	= +9;
+static const U32 test1B	= -9;
+static const F32 test1C	= 089.f;
+static const F32 test1D	= 1e9;
+static const F32 test1E	= 1f;
+static const U32x3 test1F = 3.xxx;
+static const U32x3 test20 = 1.f.xxx;
+
+["mean 1.f"]
+static const F32 test = 1;
 
 //Generating camera rays using a vInv and vpInv
 

@@ -1,5 +1,5 @@
 /* OxC3/RT Core(Oxsomi core 3/RT Core), a general framework for raytracing applications.
-*  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
+*  Copyright (C) 2023 - 2024 Oxsomi / Nielsbishere (Niels Brunekreef)
 *
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
@@ -36,6 +36,7 @@ static const U32 quadIndices[] = {
 	00264		//Left
 };
 
+[shader("vertex")]
 VSOutput mainVS(U32 id : SV_VertexID, U32 instanceId : SV_InstanceID) {
 
 	//Generate quad

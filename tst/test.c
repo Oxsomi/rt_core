@@ -1,5 +1,5 @@
 /* OxC3/RT Core(Oxsomi core 3/RT Core), a general framework for raytracing applications.
-*  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
+*  Copyright (C) 2023 - 2024 Oxsomi / Nielsbishere (Niels Brunekreef)
 *
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
@@ -477,7 +477,7 @@ void onResize(Window *w) {
 
 			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
 				gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 2)))
-				gotoIfError(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 15) >> 4))
+				gotoIfError(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 7) >> 3))
 				gotoIfError(clean, CommandListRef_endScope(commandList))
 			}
 
@@ -1172,11 +1172,42 @@ void onManagerCreate(WindowManager *manager) {
 	gotoIfError(clean, CommandListRef_begin(commandList, true, U64_MAX))
 
 	typedef enum EScopes {
+		EScopes_PrepareBLASes,
+		EScopes_PrepareTLASes,
 		EScopes_PrepareIndirect,
 		EScopes_IndirectCalcConstant
 	} EScopes;
 
 	EScopes scopes; (void)scopes;
+
+	//Prepare RTAS
+
+	ListTransition transitionArr = (ListTransition) { 0 };
+	ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
+
+	CommandScopeDependency deps[3] = { 0 };
+	gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 1, &depsArr))
+
+	if(twm->enableRt) {
+
+		depsArr.length = 0;
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareBLASes, depsArr).genericError) {
+			gotoIfError(clean, CommandListRef_updateBLASExt(commandList, twm->blas))
+			gotoIfError(clean, CommandListRef_updateBLASExt(commandList, twm->blasAABB))
+			gotoIfError(clean, CommandListRef_endScope(commandList))
+		}
+
+		deps[0] =  (CommandScopeDependency) {
+			.type = ECommandScopeDependencyType_Conditional,
+			.id = EScopes_PrepareBLASes
+		};
+
+		depsArr.length = 1;
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareTLASes, depsArr).genericError) {
+			gotoIfError(clean, CommandListRef_updateTLASExt(commandList, twm->tlas))
+			gotoIfError(clean, CommandListRef_endScope(commandList))
+		}
+	}
 
 	//Prepare 2 indirect draw calls and update constant color
 
@@ -1201,9 +1232,8 @@ void onManagerCreate(WindowManager *manager) {
 		}
 	};
 
-	ListTransition transitionArr = (ListTransition) { 0 };
-	ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
 	gotoIfError(clean, ListTransition_createRefConst(transitions, 3, &transitionArr))
+	depsArr.length = 0;
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
 		gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)))
@@ -1213,15 +1243,6 @@ void onManagerCreate(WindowManager *manager) {
 
 	//Test indirect compute pipeline
 
-	const CommandScopeDependency deps[3] = {
-		(CommandScopeDependency) {
-			.type = ECommandScopeDependencyType_Conditional,
-			.id = EScopes_PrepareIndirect
-		}
-	};
-
-	gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 1, &depsArr))
-
 	transitions[0] = (Transition) {
 		.resource = twm->deviceBuffer,
 		.range = { .buffer = (BufferRange) { 0 } },
@@ -1230,6 +1251,13 @@ void onManagerCreate(WindowManager *manager) {
 	};
 
 	transitionArr.length = 1;
+
+	deps[0] = (CommandScopeDependency) {
+		.type = ECommandScopeDependencyType_Conditional,
+		.id = EScopes_PrepareIndirect
+	};
+
+	depsArr.length = 1;
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
 		gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)))

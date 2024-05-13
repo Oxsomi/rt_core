@@ -1,5 +1,5 @@
 /* OxC3/RT Core(Oxsomi core 3/RT Core), a general framework for raytracing applications.
-*  Copyright (C) 2023 Oxsomi / Nielsbishere (Niels Brunekreef)
+*  Copyright (C) 2023 - 2024 Oxsomi / Nielsbishere (Niels Brunekreef)
 *
 *  This program is free software: you can redistribute it and/or modify
 *  it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 */
 
 #pragma once
-#include "resources.hlsl"
+#include "//resources.hlsl"
 
 RayDesc createRay(F32x3 origin, F32 minT, F32x3 direction, F32 maxT) {
 	RayDesc r = { origin, minT, direction, maxT };
