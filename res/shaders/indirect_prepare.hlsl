@@ -20,7 +20,8 @@
 
 #include "resource_bindings.hlsl"
 
-[shader("compute")]
+[stage("compute")]
+[model(6.5)]
 [numthreads(256, 1, 1)]
 void main(U32 i : SV_DispatchThreadID) {
 

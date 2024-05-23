@@ -27,7 +27,8 @@ struct VSOutput {
 	F32x2 uv : _bind(0);
 };
 
-[shader("vertex")]
+[stage("vertex")]
+[model(6.5)]
 VSOutput mainVS(F32x2 pos : _bind(0), F32x2 uv : _bind(1)) {
 	VSOutput output = (VSOutput) 0;
 	output.pos = F32x4(pos, 0, 1);
@@ -35,7 +36,8 @@ VSOutput mainVS(F32x2 pos : _bind(0), F32x2 uv : _bind(1)) {
 	return output;
 }
 
-[shader("pixel")]
+[stage("pixel")]
+[model(6.5)]
 F32x4 mainPS(VSOutput input): SV_TARGET {
 
 	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBuffer);

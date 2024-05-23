@@ -32,6 +32,7 @@ F32x3 expandBary(F32x2 bary) {
 }
 
 [shader("miss")]
+[model(6.6)]
 void mainMiss(inout ColorPayload payload) {
 
 	RayDesc ray = createRay(WorldRayOrigin(), 0, WorldRayDirection(), 1e38);
@@ -45,6 +46,7 @@ void mainMiss(inout ColorPayload payload) {
 }
 
 [shader("closesthit")]
+[model(6.6)]
 void mainClosestHit(inout ColorPayload payload, BuiltInTriangleIntersectionAttributes attr) {
 
 	F32x3 sunDir = getAppData3f(EResourceBinding_SunDirXYZ);
@@ -59,6 +61,7 @@ void mainClosestHit(inout ColorPayload payload, BuiltInTriangleIntersectionAttri
 }
 
 [shader("raygeneration")]
+[model(6.6)]
 void mainRaygen() {
 
 	RWTexture2D<unorm F32x4> tex = rwTexture2DUniform(getAppData1u(EResourceBinding_RenderTargetRW));

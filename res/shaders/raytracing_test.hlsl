@@ -20,7 +20,12 @@
 
 #include "resource_bindings.hlsl"
 
-[shader("compute")]
+[stage("compute")]
+[model(6.5)]
+[extension("RayQuery")]
+[uniform("A", "B" = "123", "C")]
+[uniform("A", "B" = "321")]
+[uniform("A")]
 [numthreads(16, 8, 1)]
 void main(U32x2 i : SV_DispatchThreadID) {
 

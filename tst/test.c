@@ -668,7 +668,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	GraphicsApplicationInfo applicationInfo = (GraphicsApplicationInfo) {
 		.name = CharString_createRefCStrConst("Rt core test"),
-		.version = GraphicsApplicationInfo_Version(0, 2, 0)
+		.version = OXC3_MAKE_VERSION(OXC3_MAJOR, OXC3_MINOR, OXC3_PATCH)
 	};
 
 	GraphicsDeviceCapabilities requiredCapabilities = (GraphicsDeviceCapabilities) { 0 };
