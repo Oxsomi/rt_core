@@ -18,7 +18,7 @@
 *  This is called dual licensing.
 */
 
-#include "//resources.hlsl"
+#include "@resources.hlsl"
 #include "ray_basics.hlsl"
 
 //Generating camera rays using a vInv and vpInv

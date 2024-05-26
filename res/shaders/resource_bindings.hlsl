@@ -19,7 +19,7 @@
 */
 
 #pragma once
-#include "//resources.hlsl"
+#include "@resources.hlsl"
 
 enum EResourceBinding {
 

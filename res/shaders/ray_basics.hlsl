@@ -19,7 +19,7 @@
 */
 
 #pragma once
-#include "//resources.hlsl"
+#include "@resources.hlsl"
 
 RayDesc createRay(F32x3 origin, F32 minT, F32x3 direction, F32 maxT) {
 	RayDesc r = { origin, minT, direction, maxT };
