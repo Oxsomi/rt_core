@@ -925,14 +925,14 @@ void onManagerCreate(WindowManager *manager) {
 		const PipelineRaytracingInfo infoArr[] = {
 			(PipelineRaytracingInfo) {
 
-				(U8) EPipelineRaytracingFlags_Default,
-				16,										//Payload size
-				8,										//Attribute size
-				1,										//Recursion
+				.flags = (U8) EPipelineRaytracingFlags_Default,
+				.maxPayloadSize = 16,										//Payload size
+				.maxAttributeSize = 8,										//Attribute size
+				.maxRecursionDepth = 1,										//Recursion
 
-				(U32) entrypointCount,
-				(U32) count,
-				(U32) hitCount
+				.stageCount = (U32) entrypointCount,
+				.binaryCount = (U32) count,
+				.groupCount = (U32) hitCount
 			}
 		};
 
