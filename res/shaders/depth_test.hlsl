@@ -37,9 +37,6 @@ static const U32 quadIndices[] = {
 };
 
 [stage("vertex")]
-[model(6.5)]
-[uniform("X")]
-[uniform("Y")]
 VSOutput mainVS(U32 id : SV_VertexID, U32 instanceId : SV_InstanceID) {
 
 	//Generate quad

@@ -21,7 +21,6 @@
 #include "resource_bindings.hlsl"
 
 [stage("compute")]
-[model(6.5)]
 [numthreads(1, 1, 1)]
 void main(U32 i : SV_DispatchThreadID) {
 	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBufferRW);

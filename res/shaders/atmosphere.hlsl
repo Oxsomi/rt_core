@@ -45,7 +45,6 @@ static const F32 test12	= .4e-5;
 static const I32 test13	= -123;
 static const U32 test14	= +123;
 static const F32 test15	= 0e1;
-static const F32 test16	= 0f;
 static const U32 test17	= 0;
 static const U32 test18	= 1;
 static const U32 test19	= 9;
@@ -53,11 +52,9 @@ static const U32 test1A	= +9;
 static const U32 test1B	= -9;
 static const F32 test1C	= 089.f;
 static const F32 test1D	= 1e9;
-static const F32 test1E	= 1f;
 static const U32x3 test1F = 3.xxx;
 static const U32x3 test20 = 1.f.xxx;
 
-["mean 1.f"]
 static const F32 test = 1;
 
 //Generating camera rays using a vInv and vpInv
