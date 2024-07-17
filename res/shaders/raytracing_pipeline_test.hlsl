@@ -105,7 +105,7 @@ void mainRaygen() {
 	U32 flags = RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH;
 
 	ColorPayload payload;
-	TraceRay(tlasExtUniform(tlasId), -1, flags, 0, 0, 0, ray, payload);
+	TraceRay(tlasExtUniform(tlasId), 0xFF, flags, 0, 0, 0, ray, payload);
 
 	Sphere sphere = (Sphere) 0;
 	sphere.pos = F32x3(0, 0, -1);		//1 unit behind our traced object
