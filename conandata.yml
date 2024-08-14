@@ -1,0 +1,4 @@
+sources:
+  "0.1.0":
+    url: "https://github.com/Oxsomi/rt_core"
+    checkout: "main"

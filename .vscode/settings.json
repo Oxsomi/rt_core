@@ -1,8 +1,0 @@
-{
-    "files.associations": {
-        "*.idl": "c",
-        "regex": "c",
-        "xlocale": "c",
-        "xstring": "c"
-    }
-}

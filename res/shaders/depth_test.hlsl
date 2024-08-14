@@ -24,7 +24,7 @@
 
 struct VSOutput {
 	F32x4 pos : SV_POSITION;
-	F32x2 uv : _bind(0);
+	F32x2 uv : TEXCOORD0;
 };
 
 static const U32 quadIndices[] = {

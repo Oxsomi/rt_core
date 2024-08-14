@@ -93,7 +93,7 @@ F32x4 AtmosHelper_getSunPosInternal(F64 JD, F32x2 longitudeLatitudeDeg, F32 rad)
 		-F32_cos(declination) * F32_sin(solarTimePi12th) / (
 			F32_cos(latitudeRad) * F32_sin(declination) -
 			F32_sin(latitudeRad) * F32_cos(declination) * F32_cos(solarTimePi12th)
-			)
+		)
 	);
 
 	return AtmosHelper_equatorialToCartesian(azimuth, altitude, rad);

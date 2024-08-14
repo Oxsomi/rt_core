@@ -165,7 +165,7 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 			//F11 we toggle full screen
 
 			case EKey_F11:
-				Window_toggleFullScreen(w);
+				Window_toggleFullScreen(w, NULL);
 				break;
 
 			//F10 we spawn more windows (but only if multiple physical windows are supported, such as on desktop)
@@ -182,7 +182,8 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 					TestWindow_getCallbacks(),
 					EWindowFormat_BGRA8,
 					sizeof(TestWindow),
-					&wind
+					&wind,
+					NULL
 				);
 
 				break;
@@ -280,14 +281,15 @@ void onManagerDraw(WindowManager *windowManager) {
 	TestWindowManager *twm = (TestWindowManager*) windowManager->extendedData.ptr;
 	++twm->framesSinceLastSecond;
 
-	Error err = Error_none();
+	Error err = Error_none(), *e_rr = &err;
+	Bool s_uccess = true;
 
-	gotoIfError(clean, ListCommandListRef_clear(&twm->commandLists))
-	gotoIfError(clean, ListSwapchainRef_clear(&twm->swapchains))
-	gotoIfError(clean, ListCommandListRef_reservex(&twm->commandLists, windowManager->windows.length + 1))
-	gotoIfError(clean, ListSwapchainRef_reservex(&twm->swapchains, windowManager->windows.length))
+	gotoIfError2(clean, ListCommandListRef_clear(&twm->commandLists))
+	gotoIfError2(clean, ListSwapchainRef_clear(&twm->swapchains))
+	gotoIfError2(clean, ListCommandListRef_reservex(&twm->commandLists, windowManager->windows.length + 1))
+	gotoIfError2(clean, ListSwapchainRef_reservex(&twm->swapchains, windowManager->windows.length))
 
-	gotoIfError(clean, ListCommandListRef_pushBackx(&twm->commandLists, twm->prepCommandList))
+	gotoIfError2(clean, ListCommandListRef_pushBackx(&twm->commandLists, twm->prepCommandList))
 
 	RenderTextureRef *renderTex = NULL;
 
@@ -305,10 +307,10 @@ void onManagerDraw(WindowManager *windowManager) {
 			if(!renderTex)
 				renderTex = tw->renderTexture;
 
-			gotoIfError(clean, ListCommandListRef_pushBackx(&twm->commandLists, cmd))
+			gotoIfError2(clean, ListCommandListRef_pushBackx(&twm->commandLists, cmd))
 
 			if (swap->typeId == (ETypeId) EGraphicsTypeId_Swapchain)
-				gotoIfError(clean, ListSwapchainRef_pushBackx(&twm->swapchains, swap))
+				gotoIfError2(clean, ListSwapchainRef_pushBackx(&twm->swapchains, swap))
 		}
 	}
 
@@ -364,7 +366,7 @@ void onManagerDraw(WindowManager *windowManager) {
 		data.tlasExt = TLASRef_ptr(twm->tlas)->handle;
 
 	Buffer runtimeData = Buffer_createRefConst((const U32*)&data, sizeof(data));
-	gotoIfError(clean, GraphicsDeviceRef_submitCommands(
+	gotoIfError2(clean, GraphicsDeviceRef_submitCommands(
 		twm->device, twm->commandLists, twm->swapchains, runtimeData,
 		(F32)(twm->time - twm->timeSinceLastRender), (F32)twm->time
 	))
@@ -381,16 +383,18 @@ void onResize(Window *w) {
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	CommandListRef *commandList = tw->commandList;
 
-	Error err = Error_none();
+	Error err = Error_none(), *e_rr = &err;
+	Bool s_uccess = true;
+
 	Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
 
 	if(w->type != EWindowType_Virtual)
-		gotoIfError(clean, GraphicsDeviceRef_wait(twm->device))
+		gotoIfError2(clean, GraphicsDeviceRef_wait(twm->device))
 
 	if(!hasSwapchain) {
 
-		gotoIfError(cleanTemp, CommandListRef_begin(commandList, true, U64_MAX))
-		gotoIfError(cleanTemp, CommandListRef_end(commandList))
+		gotoIfError2(cleanTemp, CommandListRef_begin(commandList, true, U64_MAX))
+		gotoIfError2(cleanTemp, CommandListRef_end(commandList))
 
 	cleanTemp:
 		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
@@ -398,7 +402,7 @@ void onResize(Window *w) {
 	}
 
 	if(w->type != EWindowType_Virtual)
-		gotoIfError(clean, SwapchainRef_resize(tw->swapchain))
+		gotoIfError2(clean, SwapchainRef_resize(tw->swapchain))
 
 	//Resize depth stencil and MSAA textures
 
@@ -408,7 +412,7 @@ void onResize(Window *w) {
 	U16 width = (U16) I32x2_x(w->size);
 	U16 height = (U16) I32x2_y(w->size);
 
-	gotoIfError(clean, GraphicsDeviceRef_createDepthStencil(
+	gotoIfError2(clean, GraphicsDeviceRef_createDepthStencil(
 		twm->device,
 		width, height, EDepthStencilFormat_D16, false,
 		EMSAASamples_Off,
@@ -419,7 +423,7 @@ void onResize(Window *w) {
 	if(tw->renderTexture)
 		RefPtr_dec(&tw->renderTexture);
 
-	gotoIfError(clean, GraphicsDeviceRef_createRenderTexture(
+	gotoIfError2(clean, GraphicsDeviceRef_createRenderTexture(
 		twm->device,
 		ETextureType_2D, width, height, 1, ETextureFormatId_BGRA8, EGraphicsResourceFlag_ShaderRW,
 		EMSAASamples_Off,
@@ -429,7 +433,7 @@ void onResize(Window *w) {
 
 	//Record commands
 
-	gotoIfError(clean, CommandListRef_begin(commandList, true, U64_MAX))
+	gotoIfError2(clean, CommandListRef_begin(commandList, true, U64_MAX))
 
 	if(hasSwapchain) {
 
@@ -445,8 +449,8 @@ void onResize(Window *w) {
 
 		ListTransition transitionArr = (ListTransition) { 0 };
 		ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
-		gotoIfError(clean, ListTransition_createRefConst(transitions, 5, &transitionArr))
-		gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 3, &depsArr))
+		gotoIfError2(clean, ListTransition_createRefConst(transitions, 5, &transitionArr))
+		gotoIfError2(clean, ListCommandScopeDependency_createRefConst(deps, 3, &depsArr))
 
 		//Test raytracing
 
@@ -476,9 +480,9 @@ void onResize(Window *w) {
 			transitionArr.length = 3;
 
 			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
-				gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 2)))
-				gotoIfError(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 7) >> 3))
-				gotoIfError(clean, CommandListRef_endScope(commandList))
+				gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 2)))
+				gotoIfError2(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 7) >> 3))
+				gotoIfError2(clean, CommandListRef_endScope(commandList))
 			}
 
 			//Write using raytracing pipelines
@@ -505,12 +509,12 @@ void onResize(Window *w) {
 
 			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingPipelineTest, depsArr).genericError) {
 
-				gotoIfError(clean, CommandListRef_setRaytracingPipeline(
+				gotoIfError2(clean, CommandListRef_setRaytracingPipeline(
 					commandList, ListPipelineRef_at(twm->raytracingShaders, 0)
 				))
 
-				gotoIfError(clean, CommandListRef_dispatch2DRaysExt(commandList, 0, width, height))
-				gotoIfError(clean, CommandListRef_endScope(commandList))
+				gotoIfError2(clean, CommandListRef_dispatch2DRaysExt(commandList, 0, width, height))
+				gotoIfError2(clean, CommandListRef_endScope(commandList))
 			}
 		}
 
@@ -561,19 +565,19 @@ void onResize(Window *w) {
 			};
 
 			ListAttachmentInfo colors = (ListAttachmentInfo) { 0 };
-			gotoIfError(clean, ListAttachmentInfo_createRefConst(&attachmentInfo, 1, &colors))
+			gotoIfError2(clean, ListAttachmentInfo_createRefConst(&attachmentInfo, 1, &colors))
 
 			//Start render
 
-			gotoIfError(clean, CommandListRef_startRenderExt(
+			gotoIfError2(clean, CommandListRef_startRenderExt(
 				commandList, I32x2_zero(), I32x2_zero(), colors, depthStencil
 			))
 
-			gotoIfError(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()))
+			gotoIfError2(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()))
 
 			//Draw without depth
 
-			gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 0)))
+			gotoIfError2(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 0)))
 
 			SetPrimitiveBuffersCmd primitiveBuffers = (SetPrimitiveBuffersCmd) {
 				.vertexBuffers = { twm->vertexBuffers[0], twm->vertexBuffers[1] },
@@ -581,18 +585,18 @@ void onResize(Window *w) {
 				.isIndex32Bit = false
 			};
 
-			gotoIfError(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers))
-			gotoIfError(clean, CommandListRef_drawIndexed(commandList, 6, 1))
-			gotoIfError(clean, CommandListRef_drawIndirect(commandList, twm->indirectDrawBuffer, 0, 2, true))
+			gotoIfError2(clean, CommandListRef_setPrimitiveBuffers(commandList, primitiveBuffers))
+			gotoIfError2(clean, CommandListRef_drawIndexed(commandList, 6, 1))
+			gotoIfError2(clean, CommandListRef_drawIndirect(commandList, twm->indirectDrawBuffer, 0, 2, true))
 
 			//Draw with depth
 
-			gotoIfError(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 1)))
+			gotoIfError2(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 1)))
 
-			gotoIfError(clean, CommandListRef_drawUnindexed(commandList, 36, 64))		//Draw cubes
+			gotoIfError2(clean, CommandListRef_drawUnindexed(commandList, 36, 64))		//Draw cubes
 
-			gotoIfError(clean, CommandListRef_endRenderExt(commandList))
-			gotoIfError(clean, CommandListRef_endScope(commandList))
+			gotoIfError2(clean, CommandListRef_endRenderExt(commandList))
+			gotoIfError2(clean, CommandListRef_endScope(commandList))
 		}
 
 		//Copy
@@ -604,15 +608,15 @@ void onResize(Window *w) {
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Copy, depsArr).genericError) {
 
-			gotoIfError(clean, CommandListRef_copyImage(
+			gotoIfError2(clean, CommandListRef_copyImage(
 				commandList, tw->renderTexture, tw->swapchain, ECopyType_All, (CopyImageRegion) { 0 }
 			))
 
-			gotoIfError(clean, CommandListRef_endScope(commandList))
+			gotoIfError2(clean, CommandListRef_endScope(commandList))
 		}
 	}
 
-	gotoIfError(clean, CommandListRef_end(commandList))
+	gotoIfError2(clean, CommandListRef_end(commandList))
 
 clean:
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
@@ -622,12 +626,15 @@ void onCreate(Window *w) {
 
 	TestWindowManager *twm = (TestWindowManager*) w->owner->extendedData.ptr;
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
-	Error err = Error_none();
-	gotoIfError(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &tw->commandList))
+
+	Error err = Error_none(), *e_rr = &err;
+	Bool s_uccess = true;
+
+	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &tw->commandList))
 
 	if(w->type != EWindowType_Virtual) {
 		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w };
-		gotoIfError(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, false, &tw->swapchain))
+		gotoIfError2(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, false, &tw->swapchain))
 	}
 
 clean:
@@ -654,7 +661,9 @@ Bool renderVirtual = false;		//Whether there's a physical swapchain
 
 void onManagerCreate(WindowManager *manager) {
 
-	Error err = Error_none();
+	Error err = Error_none(), *e_rr = &err;
+	Bool s_uccess = true;
+
 	Buffer tempBuffers[4] = { 0 };
 	ListSubResourceData subResource = (ListSubResourceData) { 0 };
 
@@ -674,9 +683,9 @@ void onManagerCreate(WindowManager *manager) {
 	GraphicsDeviceCapabilities requiredCapabilities = (GraphicsDeviceCapabilities) { 0 };
 	GraphicsDeviceInfo deviceInfo = (GraphicsDeviceInfo) { 0 };
 
-	gotoIfError(clean, GraphicsInstance_create(applicationInfo, EGraphicsInstanceFlags_None, &twm->instance))
+	gotoIfError2(clean, GraphicsInstance_create(applicationInfo, EGraphicsInstanceFlags_None, &twm->instance))
 
-	gotoIfError(clean, GraphicsInstance_getPreferredDevice(
+	gotoIfError2(clean, GraphicsInstance_getPreferredDevice(
 		GraphicsInstanceRef_ptr(twm->instance),
 		requiredCapabilities,
 		GraphicsInstance_vendorMaskAll,
@@ -686,7 +695,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	GraphicsDeviceInfo_print(GraphicsInstanceRef_ptr(twm->instance)->api, &deviceInfo, true);
 
-	gotoIfError(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, EGraphicsDeviceFlags_None, &twm->device))
+	gotoIfError2(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, EGraphicsDeviceFlags_None, &twm->device))
 
 	twm->enableRt = deviceInfo.capabilities.features & (EGraphicsFeatures_RayQuery | EGraphicsFeatures_RayPipeline);
 
@@ -702,27 +711,27 @@ void onManagerCreate(WindowManager *manager) {
 	SamplerInfo linearSampler = (SamplerInfo) { .filter = ESamplerFilterMode_Linear };
 	SamplerInfo anisotropicSampler = (SamplerInfo) { .filter = ESamplerFilterMode_Linear, .aniso = 16 };
 
-	gotoIfError(clean, GraphicsDeviceRef_createSampler(twm->device, nearestSampler, samplerNames[0], &twm->nearest))
-	gotoIfError(clean, GraphicsDeviceRef_createSampler(twm->device, linearSampler, samplerNames[1], &twm->linear))
-	gotoIfError(clean, GraphicsDeviceRef_createSampler(twm->device, anisotropicSampler, samplerNames[2], &twm->anisotropic))
+	gotoIfError2(clean, GraphicsDeviceRef_createSampler(twm->device, nearestSampler, samplerNames[0], &twm->nearest))
+	gotoIfError2(clean, GraphicsDeviceRef_createSampler(twm->device, linearSampler, samplerNames[1], &twm->linear))
+	gotoIfError2(clean, GraphicsDeviceRef_createSampler(twm->device, anisotropicSampler, samplerNames[2], &twm->anisotropic))
 
 	//Load all sections in rt_core
 
-	gotoIfError(clean, File_loadVirtual(CharString_createRefCStrConst("//rt_core"), NULL))
+	gotoIfError3(clean, File_loadVirtual(CharString_createRefCStrConst("//rt_core"), NULL, e_rr))
 
 	{
 		//Normal crabbage
 
 		CharString path = CharString_createRefCStrConst("//rt_core/images/crabbage.bmp");
-		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]))
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
 
 		BMPInfo bmpInfo;
-		gotoIfError(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]))
+		gotoIfError2(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]))
 
 		if(bmpInfo.w >> 16 || bmpInfo.h >> 16)
-			gotoIfError(clean, Error_invalidState(0, "onManagerCreate() bmpInfo resolution out of bounds"))
+			retError(clean, Error_invalidState(0, "onManagerCreate() bmpInfo resolution out of bounds"))
 
-		gotoIfError(clean, GraphicsDeviceRef_createTexture(
+		gotoIfError2(clean, GraphicsDeviceRef_createTexture(
 			twm->device,
 			ETextureType_2D,
 			(ETextureFormatId) bmpInfo.textureFormatId,
@@ -739,17 +748,17 @@ void onManagerCreate(WindowManager *manager) {
 		//DDS crabbage
 
 		path = CharString_createRefCStrConst("//rt_core/images/crabbage_mips.dds");
-		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]))
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
 
 		DDSInfo ddsInfo;
-		gotoIfError(clean, DDS_readx(tempBuffers[0], &ddsInfo, &subResource))
+		gotoIfError2(clean, DDS_readx(tempBuffers[0], &ddsInfo, &subResource))
 
 		path = CharString_createRefCStrConst("test_crabbage_mips.dds");
-		gotoIfError(clean, DDS_writex(subResource, ddsInfo, &tempBuffers[1]))
-		gotoIfError(clean, File_write(tempBuffers[1], path, U64_MAX))
+		gotoIfError2(clean, DDS_writex(subResource, ddsInfo, &tempBuffers[1]))
+		gotoIfError3(clean, File_write(tempBuffers[1], path, U64_MAX, e_rr))
 		Buffer_freex(&tempBuffers[1]);
 
-		gotoIfError(clean, GraphicsDeviceRef_createTexture(
+		gotoIfError2(clean, GraphicsDeviceRef_createTexture(
 			twm->device,
 			ddsInfo.type,
 			ddsInfo.textureFormatId,
@@ -769,14 +778,14 @@ void onManagerCreate(WindowManager *manager) {
 
 	{
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.main");
-		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]))
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.main");
-		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[1]))
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[1], e_rr))
 
 		if (twm->enableRt) {
 			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.main");
-			gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[2]))
+			gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[2], e_rr))
 		}
 
 		CharString nameArr[] = {
@@ -788,10 +797,10 @@ void onManagerCreate(WindowManager *manager) {
 		ListBuffer binaries = (ListBuffer) { 0 };
 		ListCharString names = (ListCharString) { 0 };
 
-		gotoIfError(clean, ListBuffer_createRefConst(tempBuffers, 2 + twm->enableRt, &binaries))
-		gotoIfError(clean, ListCharString_createRefConst(nameArr, 2 + twm->enableRt, &names))
+		gotoIfError2(clean, ListBuffer_createRefConst(tempBuffers, 2 + twm->enableRt, &binaries))
+		gotoIfError2(clean, ListCharString_createRefConst(nameArr, 2 + twm->enableRt, &names))
 
-		gotoIfError(clean, GraphicsDeviceRef_createPipelinesCompute(twm->device, &binaries, names, &twm->computeShaders))
+		gotoIfError2(clean, GraphicsDeviceRef_createPipelinesCompute(twm->device, &binaries, names, &twm->computeShaders))
 
 		tempBuffers[0] = tempBuffers[1] = tempBuffers[2] = Buffer_createNull();
 	}
@@ -800,13 +809,13 @@ void onManagerCreate(WindowManager *manager) {
 
 	{
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.mainVS");
-		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]))
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.mainPS");
-		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[1]))
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[1], e_rr))
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/depth_test.mainVS");
-		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[2]))
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[2], e_rr))
 
 		PipelineStage stageArr[4] = {
 
@@ -836,7 +845,7 @@ void onManagerCreate(WindowManager *manager) {
 		};
 
 		ListPipelineStage stages = (ListPipelineStage) { 0 };
-		gotoIfError(clean, ListPipelineStage_createRefConst(stageArr, sizeof(stageArr) / sizeof(stageArr[0]), &stages))
+		gotoIfError2(clean, ListPipelineStage_createRefConst(stageArr, sizeof(stageArr) / sizeof(stageArr[0]), &stages))
 
 		PipelineGraphicsInfo infoArr[] = {
 			(PipelineGraphicsInfo) {
@@ -881,10 +890,10 @@ void onManagerCreate(WindowManager *manager) {
 		ListPipelineGraphicsInfo infos = (ListPipelineGraphicsInfo) { 0 };
 		ListCharString names = (ListCharString) { 0 };
 
-		gotoIfError(clean, ListPipelineGraphicsInfo_createRefConst(infoArr, sizeof(infoArr) / sizeof(infoArr[0]), &infos))
-		gotoIfError(clean, ListCharString_createRefConst(nameArr, sizeof(nameArr) / sizeof(nameArr[0]), &names))
+		gotoIfError2(clean, ListPipelineGraphicsInfo_createRefConst(infoArr, sizeof(infoArr) / sizeof(infoArr[0]), &infos))
+		gotoIfError2(clean, ListCharString_createRefConst(nameArr, sizeof(nameArr) / sizeof(nameArr[0]), &names))
 
-		gotoIfError(clean, GraphicsDeviceRef_createPipelinesGraphics(
+		gotoIfError2(clean, GraphicsDeviceRef_createPipelinesGraphics(
 			twm->device, &stages, &infos, names, &twm->graphicsShaders
 		))
 
@@ -896,7 +905,7 @@ void onManagerCreate(WindowManager *manager) {
 	if (twm->enableRt) {
 
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.rt");
-		gotoIfError(clean, File_read(path, U64_MAX, &tempBuffers[0]))
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
 
 		PipelineStage stageArr[] = {
 			(PipelineStage) { .stageType = EPipelineStage_ClosestHitExt, .binaryId = 0 },
@@ -943,16 +952,16 @@ void onManagerCreate(WindowManager *manager) {
 		ListPipelineRaytracingGroup hitGroups = (ListPipelineRaytracingGroup) { 0 };
 		ListPipelineRaytracingInfo infos = (ListPipelineRaytracingInfo) { 0 };
 
-		gotoIfError(clean, ListBuffer_createRefConst(tempBuffers, count, &binaries))
-		gotoIfError(clean, ListCharString_createRefConst(nameArr, count, &names))
-		gotoIfError(clean, ListPipelineRaytracingInfo_createRefConst(infoArr, count, &infos))
+		gotoIfError2(clean, ListBuffer_createRefConst(tempBuffers, count, &binaries))
+		gotoIfError2(clean, ListCharString_createRefConst(nameArr, count, &names))
+		gotoIfError2(clean, ListPipelineRaytracingInfo_createRefConst(infoArr, count, &infos))
 
-		gotoIfError(clean, ListPipelineStage_createRefConst(stageArr, entrypointCount, &stages))
-		gotoIfError(clean, ListCharString_createRefConst(entrypointArr, entrypointCount, &entrypoints))
+		gotoIfError2(clean, ListPipelineStage_createRefConst(stageArr, entrypointCount, &stages))
+		gotoIfError2(clean, ListCharString_createRefConst(entrypointArr, entrypointCount, &entrypoints))
 
-		gotoIfError(clean, ListPipelineRaytracingGroup_createRefConst(hitArr, hitCount, &hitGroups))
+		gotoIfError2(clean, ListPipelineRaytracingGroup_createRefConst(hitArr, hitCount, &hitGroups))
 
-		gotoIfError(clean, GraphicsDeviceRef_createPipelineRaytracingExt(
+		gotoIfError2(clean, GraphicsDeviceRef_createPipelineRaytracingExt(
 			twm->device, stages, &binaries, hitGroups, infos, &entrypoints, names, &twm->raytracingShaders
 		))
 
@@ -1034,19 +1043,19 @@ void onManagerCreate(WindowManager *manager) {
 
 	Buffer vertexData = Buffer_createRefConst(vertexPos, sizeof(vertexPos));
 	CharString name = CharString_createRefCStrConst("Vertex position buffer");
-	gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+	gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
 		twm->device, positionBufferAs, EGraphicsResourceFlag_None, name, &vertexData, &twm->vertexBuffers[0]
 	))
 
 	vertexData = Buffer_createRefConst(vertDat, sizeof(vertDat));
 	name = CharString_createRefCStrConst("Vertex attribute buffer");
-	gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+	gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
 		twm->device, EDeviceBufferUsage_Vertex, EGraphicsResourceFlag_None, name, &vertexData, &twm->vertexBuffers[1]
 	))
 
 	Buffer indexData = Buffer_createRefConst(indexDat, sizeof(indexDat));
 	name = CharString_createRefCStrConst("Index buffer");
-	gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+	gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
 		twm->device, indexBufferAs, EGraphicsResourceFlag_None, name, &indexData, &twm->indexBuffer
 	))
 
@@ -1056,7 +1065,7 @@ void onManagerCreate(WindowManager *manager) {
 
 		//Build BLAS around first quad
 
-		gotoIfError(clean, GraphicsDeviceRef_createBLASExt(
+		gotoIfError2(clean, GraphicsDeviceRef_createBLASExt(
 			twm->device,
 			ERTASBuildFlags_DefaultBLAS,
 			EBLASFlag_DisableAnyHit,
@@ -1083,11 +1092,11 @@ void onManagerCreate(WindowManager *manager) {
 
 		Buffer aabbData = Buffer_createRefConst(aabbBuffer, sizeof(aabbBuffer));
 		name = CharString_createRefCStrConst("AABB buffer");
-		gotoIfError(clean, GraphicsDeviceRef_createBufferData(
+		gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
 			twm->device, EDeviceBufferUsage_ASReadExt, EGraphicsResourceFlag_None, name, &aabbData, &twm->aabbs
 		))
 
-		gotoIfError(clean, GraphicsDeviceRef_createBLASProceduralExt(
+		gotoIfError2(clean, GraphicsDeviceRef_createBLASProceduralExt(
 			twm->device,
 			ERTASBuildFlags_DefaultBLAS,
 			EBLASFlag_DisableAnyHit,
@@ -1117,11 +1126,11 @@ void onManagerCreate(WindowManager *manager) {
 		};
 
 		ListTLASInstanceStatic instanceList = (ListTLASInstanceStatic) { 0 };
-		gotoIfError(clean, ListTLASInstanceStatic_createRefConst(
+		gotoIfError2(clean, ListTLASInstanceStatic_createRefConst(
 			instances, sizeof(instances) / sizeof(instances[0]), &instanceList
 		))
 
-		gotoIfError(clean, GraphicsDeviceRef_createTLASExt(
+		gotoIfError2(clean, GraphicsDeviceRef_createTLASExt(
 			twm->device,
 			ERTASBuildFlags_DefaultTLAS,
 			NULL,
@@ -1134,19 +1143,19 @@ void onManagerCreate(WindowManager *manager) {
 	//Other shader buffers
 
 	name = CharString_createRefCStrConst("Test shader buffer");
-	gotoIfError(clean, GraphicsDeviceRef_createBuffer(
+	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device, EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRW, name, sizeof(F32x4), &twm->deviceBuffer
 	))
 
 	name = CharString_createRefCStrConst("View proj matrices buffer");
-	gotoIfError(clean, GraphicsDeviceRef_createBuffer(
+	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
 		EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRW, name, sizeof(F32x4) * 4 * 3 * 2,
 		&twm->viewProjMatrices
 	))
 
 	name = CharString_createRefCStrConst("Test indirect draw buffer");
-	gotoIfError(clean, GraphicsDeviceRef_createBuffer(
+	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
 		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderWrite,
 		name,
@@ -1155,7 +1164,7 @@ void onManagerCreate(WindowManager *manager) {
 	))
 
 	name = CharString_createRefCStrConst("Test indirect dispatch buffer");
-	gotoIfError(clean, GraphicsDeviceRef_createBuffer(
+	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
 		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderWrite,
 		name,
@@ -1163,13 +1172,13 @@ void onManagerCreate(WindowManager *manager) {
 		&twm->indirectDispatchBuffer
 	))
 
-	gotoIfError(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &twm->prepCommandList))
+	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &twm->prepCommandList))
 
 	CommandListRef *commandList = twm->prepCommandList;
 
 	//Record commands
 
-	gotoIfError(clean, CommandListRef_begin(commandList, true, U64_MAX))
+	gotoIfError2(clean, CommandListRef_begin(commandList, true, U64_MAX))
 
 	typedef enum EScopes {
 		EScopes_PrepareBLASes,
@@ -1186,15 +1195,15 @@ void onManagerCreate(WindowManager *manager) {
 	ListCommandScopeDependency depsArr = (ListCommandScopeDependency) { 0 };
 
 	CommandScopeDependency deps[3] = { 0 };
-	gotoIfError(clean, ListCommandScopeDependency_createRefConst(deps, 1, &depsArr))
+	gotoIfError2(clean, ListCommandScopeDependency_createRefConst(deps, 1, &depsArr))
 
 	if(twm->enableRt) {
 
 		depsArr.length = 0;
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareBLASes, depsArr).genericError) {
-			gotoIfError(clean, CommandListRef_updateBLASExt(commandList, twm->blas))
-			gotoIfError(clean, CommandListRef_updateBLASExt(commandList, twm->blasAABB))
-			gotoIfError(clean, CommandListRef_endScope(commandList))
+			gotoIfError2(clean, CommandListRef_updateBLASExt(commandList, twm->blas))
+			gotoIfError2(clean, CommandListRef_updateBLASExt(commandList, twm->blasAABB))
+			gotoIfError2(clean, CommandListRef_endScope(commandList))
 		}
 
 		deps[0] =  (CommandScopeDependency) {
@@ -1204,8 +1213,8 @@ void onManagerCreate(WindowManager *manager) {
 
 		depsArr.length = 1;
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareTLASes, depsArr).genericError) {
-			gotoIfError(clean, CommandListRef_updateTLASExt(commandList, twm->tlas))
-			gotoIfError(clean, CommandListRef_endScope(commandList))
+			gotoIfError2(clean, CommandListRef_updateTLASExt(commandList, twm->tlas))
+			gotoIfError2(clean, CommandListRef_endScope(commandList))
 		}
 	}
 
@@ -1232,13 +1241,13 @@ void onManagerCreate(WindowManager *manager) {
 		}
 	};
 
-	gotoIfError(clean, ListTransition_createRefConst(transitions, 3, &transitionArr))
+	gotoIfError2(clean, ListTransition_createRefConst(transitions, 3, &transitionArr))
 	depsArr.length = 0;
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
-		gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)))
-		gotoIfError(clean, CommandListRef_dispatch1D(commandList, 1))
-		gotoIfError(clean, CommandListRef_endScope(commandList))
+		gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)))
+		gotoIfError2(clean, CommandListRef_dispatch1D(commandList, 1))
+		gotoIfError2(clean, CommandListRef_endScope(commandList))
 	}
 
 	//Test indirect compute pipeline
@@ -1260,12 +1269,12 @@ void onManagerCreate(WindowManager *manager) {
 	depsArr.length = 1;
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
-		gotoIfError(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)))
-		gotoIfError(clean, CommandListRef_dispatchIndirect(commandList, twm->indirectDispatchBuffer, 0))
-		gotoIfError(clean, CommandListRef_endScope(commandList))
+		gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)))
+		gotoIfError2(clean, CommandListRef_dispatchIndirect(commandList, twm->indirectDispatchBuffer, 0))
+		gotoIfError2(clean, CommandListRef_endScope(commandList))
 	}
 
-	gotoIfError(clean, CommandListRef_end(commandList))
+	gotoIfError2(clean, CommandListRef_end(commandList))
 
 clean:
 
@@ -1320,7 +1329,8 @@ void onManagerDestroy(WindowManager *manager) {
 
 I32 Program_run() {
 
-	Error err = Error_none();
+	Error err = Error_none(), *e_rr = &err;
+	Bool s_uccess = true;
 
 	WindowManagerCallbacks callbacks;
 	callbacks.onDraw = onManagerDraw;
@@ -1329,10 +1339,10 @@ I32 Program_run() {
 	callbacks.onDestroy = onManagerDestroy;
 
 	WindowManager manager = (WindowManager) { 0 };
-	gotoIfError(clean, WindowManager_create(callbacks, sizeof(TestWindowManager), &manager))
+	gotoIfError3(clean, WindowManager_create(callbacks, sizeof(TestWindowManager), &manager, e_rr))
 
 	Window *wind = NULL;
-	gotoIfError(clean, WindowManager_createWindow(
+	gotoIfError3(clean, WindowManager_createWindow(
 		&manager, renderVirtual ? EWindowType_Virtual : EWindowType_Physical,
 		I32x2_zero(), EResolution_get(EResolution_FHD),
 		I32x2_zero(), I32x2_zero(),
@@ -1341,15 +1351,16 @@ I32 Program_run() {
 		TestWindow_getCallbacks(),
 		EWindowFormat_BGRA8,
 		sizeof(TestWindow),
-		&wind
+		&wind,
+		e_rr
 	))
 
-	gotoIfError(clean, WindowManager_wait(&manager))		//Wait til all windows are closed and process their events
+	gotoIfError3(clean, WindowManager_wait(&manager, e_rr))		//Wait til all windows are closed and process their events
 
 clean:
 	WindowManager_free(&manager);
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
-	return err.genericError ? -1 : 1;
+	return s_uccess ? 1 : -1;
 }
 
 void Program_exit() { }
