@@ -19,8 +19,8 @@
 */
 
 #pragma once
-#include "@resources.hlsl"
-#include "primitive.hlsl"
+#include "@resources.hlsli"
+#include "primitive.hlsli"
 
 static const U32 test0	= 0x123;
 static const U32 test1	= 0123;

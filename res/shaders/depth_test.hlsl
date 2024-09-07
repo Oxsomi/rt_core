@@ -18,7 +18,7 @@
 *  This is called dual licensing.
 */
 
-#include "resource_bindings.hlsl"
+#include "resource_bindings.hlsli"
 
 //Generate triangle
 
@@ -36,7 +36,7 @@ static const U32 quadIndices[] = {
 	00264		//Left
 };
 
-[stage("vertex")]
+[[oxc::stage("vertex")]]
 VSOutput mainVS(U32 id : SV_VertexID, U32 instanceId : SV_InstanceID) {
 
 	//Generate quad

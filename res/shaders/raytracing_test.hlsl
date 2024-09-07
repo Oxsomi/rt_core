@@ -18,11 +18,11 @@
 *  This is called dual licensing.
 */
 
-#include "resource_bindings.hlsl"
+#include "resource_bindings.hlsli"
 
-[stage("compute")]
-[extension("RayQuery")]
-[uniforms("X" = "Y")]
+[[oxc::stage("compute")]]
+[[oxc::extension("RayQuery")]]
+[[oxc::uniforms("X" = "Y")]]
 [numthreads(16, 8, 1)]
 void main(U32x2 i : SV_DispatchThreadID) {
 

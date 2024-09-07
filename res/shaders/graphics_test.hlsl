@@ -18,7 +18,7 @@
 *  This is called dual licensing.
 */
 
-#include "resource_bindings.hlsl"
+#include "resource_bindings.hlsli"
 
 //Generate triangle
 
@@ -27,7 +27,7 @@ struct VSOutput {
 	F32x2 uv : TEXCOORD0;
 };
 
-[stage("vertex")]
+[[oxc::stage("vertex")]]
 VSOutput mainVS(F32x2 pos : POS0, F32x2 uv : TEXCOORD0) {
 	VSOutput output = (VSOutput) 0;
 	output.pos = F32x4(pos, 0, 1);
@@ -35,7 +35,7 @@ VSOutput mainVS(F32x2 pos : POS0, F32x2 uv : TEXCOORD0) {
 	return output;
 }
 
-[stage("pixel")]
+[[oxc::stage("pixel")]]
 F32x4 mainPS(VSOutput input): SV_TARGET {
 
 	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBuffer);

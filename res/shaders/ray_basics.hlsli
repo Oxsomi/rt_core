@@ -18,28 +18,14 @@
 *  This is called dual licensing.
 */
 
-#include "@resources.hlsl"
-#include "ray_basics.hlsl"
+#pragma once
+#include "@resources.hlsli"
 
-//Generating camera rays using a vInv and vpInv
+RayDesc createRay(F32x3 origin, F32 minT, F32x3 direction, F32 maxT) {
+	RayDesc r = { origin, minT, direction, maxT };
+	return r;
+}
 
-struct Camera {
-
-	F32x4x4 v, p, vp;
-	F32x4x4 vInv, pInv, vpInv;
-
-	RayDesc getRay(U32x2 id, U32x2 dims) {
-
-		//Generate primaries
-
-		F32x2 uv = (F32x2(id) + 0.5) / F32x2(dims);
-		uv.y = 1 - uv.y;
-
-		F32x3 eye = mul(F32x4(0.xxx, 1), vInv).xyz;
-
-		F32x3 rayDest = mul(F32x4(uv * 2 - 1, 1, 1), vpInv).xyz;
-		F32x3 rayDir = normalize(rayDest - eye);
-
-		return createRay(eye, 0, rayDir, 1e6);		//1e6 limit is to please NV drivers
-	}
-};
+F32x3 posOnRay(RayDesc r, F32 t) {
+	return r.Origin + r.Direction * t;
+}

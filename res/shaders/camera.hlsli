@@ -18,34 +18,28 @@
 *  This is called dual licensing.
 */
 
-#pragma once
-#include "@resources.hlsl"
+#include "@resources.hlsli"
+#include "ray_basics.hlsli"
 
-enum EResourceBinding {
+//Generating camera rays using a vInv and vpInv
 
-	EResourceBinding_ConstantColorBuffer,
-	EResourceBinding_ConstantColorBufferRW,
-	EResourceBinding_IndirectDrawRW,
-	EResourceBinding_IndirectDispatchRW,
+struct Camera {
 
-	EResourceBinding_ViewProjMatricesRW,
-	EResourceBinding_ViewProjMatrices,
-	EResourceBinding_Crabbage2049x,
-	EResourceBinding_CrabbageCompressed,
+	F32x4x4 v, p, vp;
+	F32x4x4 vInv, pInv, vpInv;
 
-	EResourceBinding_Sampler,
-	EResourceBinding_TLAS,
-	EResourceBinding_RenderTargetRW,
-	EResourceBinding_Padding,
+	RayDesc getRay(U32x2 id, U32x2 dims) {
 
-	EResourceBinding_SunDirXYZ,
-	EResourceBinding_Padding1 = EResourceBinding_SunDirXYZ + 3,
+		//Generate primaries
 
-	EResourceBinding_CamPosXYZ,
-	EResourceBinding_Next = EResourceBinding_CamPosXYZ + 3
-};
+		F32x2 uv = (F32x2(id) + 0.5) / F32x2(dims);
+		uv.y = 1 - uv.y;
 
-struct ViewProjMatrices {
-	F32x4x4 view, proj, viewProj;
-	F32x4x4 viewInv, projInv, viewProjInv;
+		F32x3 eye = mul(F32x4(0.xxx, 1), vInv).xyz;
+
+		F32x3 rayDest = mul(F32x4(uv * 2 - 1, 1, 1), vpInv).xyz;
+		F32x3 rayDir = normalize(rayDest - eye);
+
+		return createRay(eye, 0, rayDir, 1e6);		//1e6 limit is to please NV drivers
+	}
 };

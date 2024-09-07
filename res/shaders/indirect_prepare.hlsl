@@ -18,9 +18,9 @@
 *  This is called dual licensing.
 */
 
-#include "resource_bindings.hlsl"
+#include "resource_bindings.hlsli"
 
-[stage("compute")]
+[[oxc::stage("compute")]]
 [numthreads(256, 1, 1)]
 void main(U32 i : SV_DispatchThreadID) {
 

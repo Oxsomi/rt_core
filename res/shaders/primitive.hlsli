@@ -19,8 +19,8 @@
 */
 
 #pragma once
-#include "@resources.hlsl"
-#include "ray_basics.hlsl"
+#include "@resources.hlsli"
+#include "ray_basics.hlsli"
 
 //Sphere intersection
 

@@ -19,13 +19,33 @@
 */
 
 #pragma once
-#include "@resources.hlsl"
+#include "@resources.hlsli"
 
-RayDesc createRay(F32x3 origin, F32 minT, F32x3 direction, F32 maxT) {
-	RayDesc r = { origin, minT, direction, maxT };
-	return r;
-}
+enum EResourceBinding {
 
-F32x3 posOnRay(RayDesc r, F32 t) {
-	return r.Origin + r.Direction * t;
-}
+	EResourceBinding_ConstantColorBuffer,
+	EResourceBinding_ConstantColorBufferRW,
+	EResourceBinding_IndirectDrawRW,
+	EResourceBinding_IndirectDispatchRW,
+
+	EResourceBinding_ViewProjMatricesRW,
+	EResourceBinding_ViewProjMatrices,
+	EResourceBinding_Crabbage2049x,
+	EResourceBinding_CrabbageCompressed,
+
+	EResourceBinding_Sampler,
+	EResourceBinding_TLAS,
+	EResourceBinding_RenderTargetRW,
+	EResourceBinding_Padding,
+
+	EResourceBinding_SunDirXYZ,
+	EResourceBinding_Padding1 = EResourceBinding_SunDirXYZ + 3,
+
+	EResourceBinding_CamPosXYZ,
+	EResourceBinding_Next = EResourceBinding_CamPosXYZ + 3
+};
+
+struct ViewProjMatrices {
+	F32x4x4 view, proj, viewProj;
+	F32x4x4 viewInv, projInv, viewProjInv;
+};
