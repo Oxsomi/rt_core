@@ -31,7 +31,6 @@ F32x3 expandBary(F32x2 bary) {
 	return F32x3(1 - bary.x - bary.y, bary);
 }
 
-[[oxc::extension("RayQuery")]]		//TODO Seems like SPIRV somehow generates this as a dependency? WTF?
 [shader("miss")]
 void mainMiss(inout ColorPayload payload) {
 
@@ -45,7 +44,6 @@ void mainMiss(inout ColorPayload payload) {
 	payload.hitT = -1;
 }
 
-[[oxc::extension("RayQuery")]]			//TODO Seems like SPIRV somehow generates this as a dependency? WTF?
 [shader("closesthit")]
 void mainClosestHit(inout ColorPayload payload, BuiltInTriangleIntersectionAttributes attr) {
 
@@ -60,7 +58,6 @@ void mainClosestHit(inout ColorPayload payload, BuiltInTriangleIntersectionAttri
 	payload.hitT = RayTCurrent();
 }
 
-[[oxc::extension("RayQuery")]]			//TODO Seems like SPIRV somehow generates this as a dependency? WTF?
 [shader("raygeneration")]
 void mainRaygen() {
 

@@ -111,7 +111,7 @@ set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/test)
 
 add_virtual_files(
 	TARGET rt_core NAME shaders
-	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders/compiled
+	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
 	SELF ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
