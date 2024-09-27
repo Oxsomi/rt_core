@@ -25,6 +25,7 @@
 #include "types/flp.h"
 #include "formats/bmp.h"
 #include "formats/dds.h"
+#include "formats/oiSH.h"
 #include "platforms/keyboard.h"
 #include "platforms/platform.h"
 #include "platforms/input_device.h"
@@ -37,6 +38,7 @@
 #include "platforms/ext/stringx.h"
 #include "platforms/ext/bmpx.h"
 #include "platforms/ext/ddsx.h"
+#include "platforms/ext/formatx.h"
 #include "graphics/generic/instance.h"
 #include "graphics/generic/device.h"
 #include "graphics/generic/swapchain.h"
@@ -53,6 +55,8 @@
 #include "atmos_helper.h"
 #include "types/math.h"
 
+#define _GRAPHICS_API GRAPHICS_API_D3D12			//TODO: Change this for testing
+//#define _GRAPHICS_API GRAPHICS_API_VULKAN
 #include "graphics/generic/application.h"
 
 const Bool Platform_useWorkingDirectory = false;
@@ -60,6 +64,8 @@ const Bool Platform_useWorkingDirectory = false;
 //Globals
 
 typedef struct TestWindowManager {
+
+	F32x4 camPos;
 
 	GraphicsInstanceRef *instance;
 	GraphicsDeviceRef *device;
@@ -79,9 +85,9 @@ typedef struct TestWindowManager {
 	BLASRef *blasAABB;								//If rt is on, the BLAS of a few boxes
 	TLASRef *tlas;									//If rt is on, contains the scene's AS
 
-	ListPipelineRef computeShaders;
-	ListPipelineRef graphicsShaders;
-	ListPipelineRef raytracingShaders;
+	PipelineRef *prepareIndirectPipeline, *indirectCompute, *inlineRaytracingTest;
+	PipelineRef *graphicsTest, *graphicsDepthTest;
+	PipelineRef *raytracingPipelineTest;
 	ListCommandListRef commandLists;
 	ListSwapchainRef swapchains;
 
@@ -98,8 +104,6 @@ typedef struct TestWindowManager {
 	Ns lastTime;
 
 	F64 JD;
-
-	F32x4 camPos;
 
 } TestWindowManager;
 
@@ -480,7 +484,7 @@ void onResize(Window *w) {
 			transitionArr.length = 3;
 
 			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
-				gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 2)))
+				gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, twm->inlineRaytracingTest))
 				gotoIfError2(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 7) >> 3))
 				gotoIfError2(clean, CommandListRef_endScope(commandList))
 			}
@@ -508,18 +512,13 @@ void onResize(Window *w) {
 			transitionArr.length = 3;
 
 			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingPipelineTest, depsArr).genericError) {
-
-				gotoIfError2(clean, CommandListRef_setRaytracingPipeline(
-					commandList, ListPipelineRef_at(twm->raytracingShaders, 0)
-				))
-
+				gotoIfError2(clean, CommandListRef_setRaytracingPipeline(commandList, twm->raytracingPipelineTest))
 				gotoIfError2(clean, CommandListRef_dispatch2DRaysExt(commandList, 0, width, height))
 				gotoIfError2(clean, CommandListRef_endScope(commandList))
 			}
 		}
 
 		//Test graphics pipeline
-
 
 		transitions[0] = (Transition) {
 			.resource = twm->deviceBuffer,
@@ -577,7 +576,7 @@ void onResize(Window *w) {
 
 			//Draw without depth
 
-			gotoIfError2(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 0)))
+			gotoIfError2(clean, CommandListRef_setGraphicsPipeline(commandList, twm->graphicsTest))
 
 			SetPrimitiveBuffersCmd primitiveBuffers = (SetPrimitiveBuffersCmd) {
 				.vertexBuffers = { twm->vertexBuffers[0], twm->vertexBuffers[1] },
@@ -591,7 +590,7 @@ void onResize(Window *w) {
 
 			//Draw with depth
 
-			gotoIfError2(clean, CommandListRef_setGraphicsPipeline(commandList, ListPipelineRef_at(twm->graphicsShaders, 1)))
+			gotoIfError2(clean, CommandListRef_setGraphicsPipeline(commandList, twm->graphicsDepthTest))
 
 			gotoIfError2(clean, CommandListRef_drawUnindexed(commandList, 36, 64))		//Draw cubes
 
@@ -665,6 +664,7 @@ void onManagerCreate(WindowManager *manager) {
 	Bool s_uccess = true;
 
 	Buffer tempBuffers[4] = { 0 };
+	SHFile tmpBinaries[2] = { 0 };
 	ListSubResourceData subResource = (ListSubResourceData) { 0 };
 
 	TestWindowManager *twm = (TestWindowManager*) manager->extendedData.ptr;
@@ -777,195 +777,262 @@ void onManagerCreate(WindowManager *manager) {
 	//Compute pipelines
 
 	{
-		CharString path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.main");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		//Indirect prepare
 
-		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.main");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[1], e_rr))
+		CharString path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.oiSH");
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+		
+		U32 main = GraphicsDeviceRef_getFirstShaderEntry(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("main"),
+			(ListCharString) { 0 }
+		);
+
+		gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("Prepare indirect pipeline"),
+			main,
+			&twm->prepareIndirectPipeline,
+			e_rr
+		))
+
+		SHFile_freex(&tmpBinaries[0]);
+		Buffer_freex(&tempBuffers[0]);
+
+		//Indirect compute
+
+		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.oiSH");
+		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+		
+		main = GraphicsDeviceRef_getFirstShaderEntry(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("main"),
+			(ListCharString) { 0 }
+		);
+
+		gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("Indirect compute dispatch"),
+			main,
+			&twm->indirectCompute,
+			e_rr
+		))
+
+		SHFile_freex(&tmpBinaries[0]);
+		Buffer_freex(&tempBuffers[0]);
+
+		//Inline raytracing test
 
 		if (twm->enableRt) {
-			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.main");
-			gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[2], e_rr))
+
+			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.oiSH");
+			gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+			gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+		
+			main = GraphicsDeviceRef_getFirstShaderEntry(
+				twm->device,
+				tmpBinaries[0],
+				CharString_createRefCStrConst("main"),
+				(ListCharString) { 0 }
+			);
+
+			gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
+				twm->device,
+				tmpBinaries[0],
+				CharString_createRefCStrConst("Inline raytracing test"),
+				main,
+				&twm->raytracingPipelineTest,
+				e_rr
+			))
+
+			SHFile_freex(&tmpBinaries[0]);
+			Buffer_freex(&tempBuffers[0]);
 		}
-
-		CharString nameArr[] = {
-			CharString_createRefCStrConst("Prepare indirect pipeline"),
-			CharString_createRefCStrConst("Indirect compute dispatch"),
-			CharString_createRefCStrConst("Inline raytracing test")
-		};
-
-		ListBuffer binaries = (ListBuffer) { 0 };
-		ListCharString names = (ListCharString) { 0 };
-
-		gotoIfError2(clean, ListBuffer_createRefConst(tempBuffers, 2 + twm->enableRt, &binaries))
-		gotoIfError2(clean, ListCharString_createRefConst(nameArr, 2 + twm->enableRt, &names))
-
-		gotoIfError2(clean, GraphicsDeviceRef_createPipelinesCompute(twm->device, &binaries, names, &twm->computeShaders))
-
-		tempBuffers[0] = tempBuffers[1] = tempBuffers[2] = Buffer_createNull();
 	}
 
 	//Graphics pipelines
 
 	{
-		CharString path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.mainVS");
+		CharString path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.oiSH");
 		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
 
-		path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.mainPS");
+		path = CharString_createRefCStrConst("//rt_core/shaders/depth_test.oiSH");
 		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[1], e_rr))
+		gotoIfError3(clean, SHFile_readx(tempBuffers[1], false, &tmpBinaries[1], e_rr))
 
-		path = CharString_createRefCStrConst("//rt_core/shaders/depth_test.mainVS");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[2], e_rr))
+		ListSHFile binaries = (ListSHFile) { 0 };
+		gotoIfError2(clean, ListSHFile_createRefConst(tmpBinaries, 2, &binaries))
 
-		PipelineStage stageArr[4] = {
+		U32 mainVS = GraphicsDeviceRef_getFirstShaderEntry(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("mainVS"),
+			(ListCharString) { 0 }
+		);
 
-			//Pipeline without depth stencil
+		U32 mainPS = GraphicsDeviceRef_getFirstShaderEntry(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("mainPS"),
+			(ListCharString) { 0 }
+		);
 
-			(PipelineStage) {
-				.stageType = EPipelineStage_Vertex,
-				.binary = tempBuffers[0]
-			},
+		U32 mainVSDepth = GraphicsDeviceRef_getFirstShaderEntry(
+			twm->device,
+			tmpBinaries[1],
+			CharString_createRefCStrConst("mainVS"),
+			(ListCharString) { 0 }
+		);
 
-			(PipelineStage) {
-				.stageType = EPipelineStage_Pixel,
-				.binary = tempBuffers[1]
-			},
-
-			//Pipeline with depth (but still the same pixel shader)
-
-			(PipelineStage) {
-				.stageType = EPipelineStage_Vertex,
-				.binary = tempBuffers[2]
-			},
-
-			(PipelineStage) {
-				.stageType = EPipelineStage_Pixel,
-				.binary = Buffer_createRefFromBuffer(tempBuffers[1], true)
-			}
-		};
+		//Pipeline without depth stencil
 
 		ListPipelineStage stages = (ListPipelineStage) { 0 };
-		gotoIfError2(clean, ListPipelineStage_createRefConst(stageArr, sizeof(stageArr) / sizeof(stageArr[0]), &stages))
 
-		PipelineGraphicsInfo infoArr[] = {
-			(PipelineGraphicsInfo) {
-				.stageCount = 2,
-				.vertexLayout = {
-					.bufferStrides12_isInstance1 = { (U16) sizeof(VertexPosBuffer), (U16) sizeof(VertexDataBuffer) },
-					.attributes = {
-						(VertexAttribute) {
-							.offset11 = 0,
-							.bufferId4 = 0,
-							.format = ETextureFormatId_RG16f,
-						},
-						(VertexAttribute) {
-							.offset11 = 0,
-							.bufferId4 = 1,
-							.format = ETextureFormatId_RG16f,
-						}
+		PipelineStage stageArr[2] = {
+			(PipelineStage) { .binaryId = mainVS, .shFileId = 0 },
+			(PipelineStage) { .binaryId = mainPS, .shFileId = 0 }
+		};
+
+		gotoIfError2(clean, ListPipelineStage_createRefConst(stageArr, 2, &stages))
+
+		PipelineGraphicsInfo info = (PipelineGraphicsInfo) {
+			.vertexLayout = {
+				.bufferStrides12_isInstance1 = { (U16) sizeof(VertexPosBuffer), (U16) sizeof(VertexDataBuffer) },
+				.attributes = {
+					(VertexAttribute) {
+						.offset11 = 0,
+						.bufferId4 = 0,
+						.format = ETextureFormatId_RG16f,
+					},
+					(VertexAttribute) {
+						.offset11 = 0,
+						.bufferId4 = 1,
+						.format = ETextureFormatId_RG16f,
 					}
-				},
-				.attachmentCountExt = 1,
-				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
-				.depthFormatExt = EDepthStencilFormat_D16,
-				.msaa = EMSAASamples_Off,
-				.msaaMinSampleShading = 0.2f
+				}
 			},
-			(PipelineGraphicsInfo) {
-				.depthStencil = (DepthStencilState) { .flags = EDepthStencilFlags_DepthWrite },
-				.stageCount = 2,
-				.attachmentCountExt = 1,
-				.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
-				.depthFormatExt = EDepthStencilFormat_D16,
-				.msaa = EMSAASamples_Off,
-				.msaaMinSampleShading = 0.2f
-			}
+			.attachmentCountExt = 1,
+			.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
+			.depthFormatExt = EDepthStencilFormat_D16,
+			.msaa = EMSAASamples_Off,
+			.msaaMinSampleShading = 0.2f
 		};
 
-		CharString nameArr[] = {
+		gotoIfError3(clean, GraphicsDeviceRef_createPipelineGraphics(
+			twm->device,
+			binaries,
+			&stages,
+			info,
 			CharString_createRefCStrConst("Test graphics pipeline"),
-			CharString_createRefCStrConst("Test graphics depth pipeline")
-		};
-
-		ListPipelineGraphicsInfo infos = (ListPipelineGraphicsInfo) { 0 };
-		ListCharString names = (ListCharString) { 0 };
-
-		gotoIfError2(clean, ListPipelineGraphicsInfo_createRefConst(infoArr, sizeof(infoArr) / sizeof(infoArr[0]), &infos))
-		gotoIfError2(clean, ListCharString_createRefConst(nameArr, sizeof(nameArr) / sizeof(nameArr[0]), &names))
-
-		gotoIfError2(clean, GraphicsDeviceRef_createPipelinesGraphics(
-			twm->device, &stages, &infos, names, &twm->graphicsShaders
+			&twm->graphicsTest,
+			e_rr
 		))
 
-		tempBuffers[0] = tempBuffers[1] = tempBuffers[2] = Buffer_createNull();
+		//Pipeline with depth (but still the same pixel shader)
+
+		stageArr[0] = (PipelineStage) { .binaryId = mainVSDepth, .shFileId = 1 };
+		stageArr[1] = (PipelineStage) { .binaryId = mainPS,		 .shFileId = 0 };
+
+		gotoIfError2(clean, ListPipelineStage_createRefConst(stageArr, 2, &stages))
+
+		info = (PipelineGraphicsInfo) {
+			.depthStencil = (DepthStencilState) { .flags = EDepthStencilFlags_DepthWrite },
+			.attachmentCountExt = 1,
+			.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
+			.depthFormatExt = EDepthStencilFormat_D16,
+			.msaa = EMSAASamples_Off,
+			.msaaMinSampleShading = 0.2f
+		};
+
+		gotoIfError3(clean, GraphicsDeviceRef_createPipelineGraphics(
+			twm->device,
+			binaries,
+			&stages,
+			info,
+			CharString_createRefCStrConst("Test graphics depth pipeline"),
+			&twm->graphicsDepthTest,
+			e_rr
+		))
+		
+		SHFile_freex(&tmpBinaries[0]);
+		SHFile_freex(&tmpBinaries[1]);
+		Buffer_freex(&tempBuffers[0]);
+		Buffer_freex(&tempBuffers[1]);
 	}
 
 	//Raytracing pipelines
 
 	if (twm->enableRt) {
 
-		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.rt");
+		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.oiSH");
 		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+
+		U32 mainMiss = GraphicsDeviceRef_getFirstShaderEntry(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("mainMiss"),
+			(ListCharString) { 0 }
+		);
+
+		U32 mainClosestHit = GraphicsDeviceRef_getFirstShaderEntry(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("mainClosestHit"),
+			(ListCharString) { 0 }
+		);
+
+		U32 mainRaygen = GraphicsDeviceRef_getFirstShaderEntry(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("mainRaygen"),
+			(ListCharString) { 0 }
+		);
 
 		PipelineStage stageArr[] = {
-			(PipelineStage) { .stageType = EPipelineStage_ClosestHitExt, .binaryId = 0 },
-			(PipelineStage) { .stageType = EPipelineStage_MissExt, .binaryId = 0 },
-			(PipelineStage) { .stageType = EPipelineStage_RaygenExt, .binaryId = 0 }
-		};
-
-		CharString entrypointArr[] = {
-			CharString_createRefCStrConst("mainClosestHit"),
-			CharString_createRefCStrConst("mainMiss"),
-			CharString_createRefCStrConst("mainRaygen")
+			(PipelineStage) { .binaryId = mainClosestHit,	.shFileId = 0 },
+			(PipelineStage) { .binaryId = mainMiss,			.shFileId = 0 },
+			(PipelineStage) { .binaryId = mainRaygen,		.shFileId = 0 }
 		};
 
 		PipelineRaytracingGroup hitArr[] = {
 			(PipelineRaytracingGroup) { .closestHit = 0, .anyHit = U32_MAX, .intersection = U32_MAX }
 		};
 
-		CharString nameArr[] = {
-			CharString_createRefCStrConst("Raytracing pipeline test")
+		PipelineRaytracingInfo info = (PipelineRaytracingInfo) {
+			.flags = (U8) EPipelineRaytracingFlags_DefaultStrict,
+			.maxRecursionDepth = 1
 		};
 
-		U64 count = sizeof(nameArr) / sizeof(nameArr[0]);
-		U64 entrypointCount = sizeof(stageArr) / sizeof(stageArr[0]);
-		U64 hitCount = sizeof(hitArr) / sizeof(hitArr[0]);
-
-		const PipelineRaytracingInfo infoArr[] = {
-			(PipelineRaytracingInfo) {
-
-				.flags = (U8) EPipelineRaytracingFlags_Default,
-				.maxPayloadSize = 16,										//Payload size
-				.maxAttributeSize = 8,										//Attribute size
-				.maxRecursionDepth = 1,										//Recursion
-
-				.stageCount = (U32) entrypointCount,
-				.binaryCount = (U32) count,
-				.groupCount = (U32) hitCount
-			}
-		};
-
-		ListBuffer binaries = (ListBuffer) { 0 };
-		ListCharString names = (ListCharString) { 0 };
+		ListSHFile binaries = (ListSHFile) { 0 };
 		ListPipelineStage stages = (ListPipelineStage) { 0 };
-		ListCharString entrypoints = (ListCharString) { 0 };
 		ListPipelineRaytracingGroup hitGroups = (ListPipelineRaytracingGroup) { 0 };
-		ListPipelineRaytracingInfo infos = (ListPipelineRaytracingInfo) { 0 };
 
-		gotoIfError2(clean, ListBuffer_createRefConst(tempBuffers, count, &binaries))
-		gotoIfError2(clean, ListCharString_createRefConst(nameArr, count, &names))
-		gotoIfError2(clean, ListPipelineRaytracingInfo_createRefConst(infoArr, count, &infos))
+		gotoIfError2(clean, ListSHFile_createRefConst(&tmpBinaries[0], 1, &binaries))
+		gotoIfError2(clean, ListPipelineStage_createRefConst(stageArr, sizeof(stageArr) / sizeof(stageArr[0]), &stages))
 
-		gotoIfError2(clean, ListPipelineStage_createRefConst(stageArr, entrypointCount, &stages))
-		gotoIfError2(clean, ListCharString_createRefConst(entrypointArr, entrypointCount, &entrypoints))
+		gotoIfError2(clean, ListPipelineRaytracingGroup_createRefConst(hitArr, sizeof(hitArr) / sizeof(hitArr[0]), &hitGroups))
 
-		gotoIfError2(clean, ListPipelineRaytracingGroup_createRefConst(hitArr, hitCount, &hitGroups))
-
-		gotoIfError2(clean, GraphicsDeviceRef_createPipelineRaytracingExt(
-			twm->device, stages, &binaries, hitGroups, infos, &entrypoints, names, &twm->raytracingShaders
+		gotoIfError3(clean, GraphicsDeviceRef_createPipelineRaytracingExt(
+			twm->device,
+			&stages,
+			binaries,
+			&hitGroups,
+			info,
+			CharString_createRefCStrConst("Raytracing pipeline test"),
+			&twm->raytracingPipelineTest,
+			e_rr
 		))
-
-		tempBuffers[0] = tempBuffers[1] = tempBuffers[2] = Buffer_createNull();
+		
+		SHFile_freex(&tmpBinaries[0]);
+		Buffer_freex(&tempBuffers[0]);
 	}
 
 	//Mesh data
@@ -1245,7 +1312,7 @@ void onManagerCreate(WindowManager *manager) {
 	depsArr.length = 0;
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareIndirect, depsArr).genericError) {
-		gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 0)))
+		gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, twm->prepareIndirectPipeline))
 		gotoIfError2(clean, CommandListRef_dispatch1D(commandList, 1))
 		gotoIfError2(clean, CommandListRef_endScope(commandList))
 	}
@@ -1269,7 +1336,7 @@ void onManagerCreate(WindowManager *manager) {
 	depsArr.length = 1;
 
 	if(!CommandListRef_startScope(commandList, transitionArr, EScopes_IndirectCalcConstant, depsArr).genericError) {
-		gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, ListPipelineRef_at(twm->computeShaders, 1)))
+		gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, twm->indirectCompute))
 		gotoIfError2(clean, CommandListRef_dispatchIndirect(commandList, twm->indirectDispatchBuffer, 0))
 		gotoIfError2(clean, CommandListRef_endScope(commandList))
 	}
@@ -1282,6 +1349,9 @@ clean:
 
 	for(U64 i = 0; i < sizeof(tempBuffers) / sizeof(tempBuffers[0]); ++i)
 		Buffer_freex(&tempBuffers[i]);
+
+	for(U64 i = 0; i < sizeof(tmpBinaries) / sizeof(tmpBinaries[0]); ++i)
+		SHFile_freex(&tmpBinaries[i]);
 
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
@@ -1304,9 +1374,12 @@ void onManagerDestroy(WindowManager *manager) {
 	DeviceTextureRef_dec(&twm->crabbage2049x);
 	DeviceTextureRef_dec(&twm->crabbageCompressed);
 
-	PipelineRef_decAll(&twm->graphicsShaders);
-	PipelineRef_decAll(&twm->computeShaders);
-	PipelineRef_decAll(&twm->raytracingShaders);
+	PipelineRef_dec(&twm->graphicsTest);
+	PipelineRef_dec(&twm->graphicsDepthTest);
+	PipelineRef_dec(&twm->prepareIndirectPipeline);
+	PipelineRef_dec(&twm->indirectCompute);
+	PipelineRef_dec(&twm->inlineRaytracingTest);
+	PipelineRef_dec(&twm->raytracingPipelineTest);
 	CommandListRef_dec(&twm->prepCommandList);
 
 	ListCommandListRef_freex(&twm->commandLists);

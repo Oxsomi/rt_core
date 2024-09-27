@@ -75,7 +75,7 @@ class rt_core(ConanFile):
 
 	def build_requirements(self):
 		self.tool_requires("oxc3/0.2.0", options = {
-			"forceVulkan": False,
+			"forceVulkan": self.options.forceVulkan,
 			"enableSIMD": True,
 			"enableTests": False,
 			"enableOxC3CLI": True,
