@@ -181,7 +181,7 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 					w->owner, EWindowType_Physical,
 					I32x2_zero(), EResolution_get(EResolution_FHD),
 					I32x2_zero(), I32x2_zero(),
-					EWindowHint_AllowFullscreen,
+					EWindowHint_Default,
 					CharString_createRefCStrConst("Rt core test (duped)"),
 					TestWindow_getCallbacks(),
 					EWindowFormat_BGRA8,
@@ -834,12 +834,21 @@ void onManagerCreate(WindowManager *manager) {
 			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.oiSH");
 			gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
 			gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+
+			CharString uniformsArr[2];
+			uniformsArr[0] = CharString_createRefCStrConst("X");
+			uniformsArr[1] = CharString_createRefCStrConst("Y");
+
+			ListCharString uniforms = (ListCharString) { 0 };
+			gotoIfError2(clean, ListCharString_createRefConst(
+				uniformsArr, sizeof(uniformsArr) / sizeof(uniformsArr[0]), &uniforms
+			))
 		
 			main = GraphicsDeviceRef_getFirstShaderEntry(
 				twm->device,
 				tmpBinaries[0],
 				CharString_createRefCStrConst("main"),
-				(ListCharString) { 0 }
+				uniforms
 			);
 
 			gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
@@ -847,7 +856,7 @@ void onManagerCreate(WindowManager *manager) {
 				tmpBinaries[0],
 				CharString_createRefCStrConst("Inline raytracing test"),
 				main,
-				&twm->raytracingPipelineTest,
+				&twm->inlineRaytracingTest,
 				e_rr
 			))
 
@@ -1419,7 +1428,7 @@ I32 Program_run() {
 		&manager, renderVirtual ? EWindowType_Virtual : EWindowType_Physical,
 		I32x2_zero(), EResolution_get(EResolution_FHD),
 		I32x2_zero(), I32x2_zero(),
-		EWindowHint_AllowFullscreen,
+		EWindowHint_Default,
 		CharString_createRefCStrConst("Rt core test"),
 		TestWindow_getCallbacks(),
 		EWindowFormat_BGRA8,

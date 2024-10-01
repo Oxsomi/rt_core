@@ -74,7 +74,7 @@ class rt_core(ConanFile):
 		cmake.build()
 
 	def build_requirements(self):
-		self.tool_requires("oxc3/0.2.0", options = {
+		self.tool_requires("oxc3/0.2.021", options = {
 			"forceVulkan": self.options.forceVulkan,
 			"enableSIMD": True,
 			"enableTests": False,
@@ -85,7 +85,7 @@ class rt_core(ConanFile):
 		})
 
 	def requirements(self):
-		self.requires("oxc3/0.2.0", options = {
+		self.requires("oxc3/0.2.021", options = {
 			"forceVulkan": self.options.forceVulkan,
 			"enableSIMD": self.options.enableSIMD,
 			"enableTests": False,

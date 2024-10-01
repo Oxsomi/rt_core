@@ -84,20 +84,22 @@ void mainRaygen() {
 	cam.pInv = inverseSlow(cam.p);
 	cam.vpInv = inverseSlow(cam.vp);
 
-	RayDesc ray = cam.getRay(id, dims);
+	//RayDesc ray = cam.getRay(id, dims);
 
 	F32x2 uv = (id + 0.5) / dims;
 
-	F32 scale = tan(45 * F32_degToRad);
+	/*F32 scale = tan(45 * F32_degToRad);
 	uv.x = (2 * uv.x - 1) * aspect * scale;
-	uv.y = (1 - 2 * uv.y) * scale;
+	uv.y = (1 - 2 * uv.y) * scale;*/
 
-	ray.Origin = ray.Origin;
-	ray.Direction = normalize(F32x3(uv, -1));
+	//ray.Origin = ray.Origin;
+	//ray.Direction = normalize(F32x3(uv, -1));
+	
 
 	//Trace against
 
 	U32 tlasId = getAppData1u(EResourceBinding_TLAS);
+	RayDesc ray = { F32x3(uv * 10 - 5, 5), 0, F32x3(0, 0, -1), 1e6 };
 
 	if(!tlasId)
 		ray.TMax = 0;		//Deactivate ray
@@ -105,9 +107,9 @@ void mainRaygen() {
 	U32 flags = RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH;
 
 	ColorPayload payload;
-	TraceRay(tlasExtUniform(tlasId), 0xFF, flags, 0, 0, 0, ray, payload);
+	TraceRay(tlasExtUniform(tlasId), flags, 0xFF, 0, 0, 0, ray, payload);
 
-	Sphere sphere = (Sphere) 0;
+	/*Sphere sphere = (Sphere) 0;
 	sphere.pos = F32x3(0, 0, -1);		//1 unit behind our traced object
 	sphere.rad = 1;
 
@@ -120,7 +122,7 @@ void mainRaygen() {
 		F32x3 sunDir = getAppData3f(EResourceBinding_SunDirXYZ);
 
 		payload.color = Atmosphere::earth(sunDir).getSunContribution(norm) * F32x3(1, 0.5, 0.25);
-	}
+	}*/
 
 	F32 exposure = exp2(-14);
 
