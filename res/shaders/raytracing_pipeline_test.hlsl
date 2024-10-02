@@ -87,6 +87,7 @@ void mainRaygen() {
 	//RayDesc ray = cam.getRay(id, dims);
 
 	F32x2 uv = (id + 0.5) / dims;
+    uv.y = 1 - uv.y;		//Flip to avoid overlap with inline RT
 
 	/*F32 scale = tan(45 * F32_degToRad);
 	uv.x = (2 * uv.x - 1) * aspect * scale;
@@ -126,5 +127,6 @@ void mainRaygen() {
 
 	F32 exposure = exp2(-14);
 
-	tex[id] = F32x4(payload.color * exposure, 1);
+	if (payload.hitT >= 0)
+		tex[id] = F32x4(payload.color * exposure, 1);
 }

@@ -376,8 +376,6 @@ void onManagerDraw(WindowManager *windowManager) {
 	if (twm->tlas)
 		data.tlasExt = TLASRef_ptr(twm->tlas)->handle;
 
-	Log_debugLnx("%u", data.renderTargetWrite);
-
 	Buffer runtimeData = Buffer_createRefConst((const U32*)&data, sizeof(data));
 	gotoIfError2(clean, GraphicsDeviceRef_submitCommands(
 		twm->device, twm->commandLists, twm->swapchains, runtimeData,
@@ -698,7 +696,7 @@ void onManagerCreate(WindowManager *manager) {
 		GraphicsInstanceRef_ptr(twm->instance),
 		requiredCapabilities,
 		GraphicsInstance_vendorMaskAll,
-		GraphicsInstance_deviceTypeAll,
+		/*1 << EGraphicsDeviceType_Integrated, */GraphicsInstance_deviceTypeAll,
 		&deviceInfo
 	))
 
