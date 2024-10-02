@@ -70,6 +70,7 @@ typedef struct TestWindowManager {
 	GraphicsInstanceRef *instance;
 	GraphicsDeviceRef *device;
 	CommandListRef *prepCommandList;
+	CommandListRef *asCommandList;
 
 	DeviceBufferRef *aabbs;							//temp buffer for holding aabbs for blasAABB
 	DeviceBufferRef *vertexBuffers[2];
@@ -99,7 +100,8 @@ typedef struct TestWindowManager {
 	F32 timeStep;
 	Bool renderVirtual;
 	Bool enableRt;
-	U8 pad[2];
+	Bool initialized;
+	U8 pad[1];
 
 	Ns lastTime;
 
@@ -293,6 +295,11 @@ void onManagerDraw(WindowManager *windowManager) {
 	gotoIfError2(clean, ListCommandListRef_reservex(&twm->commandLists, windowManager->windows.length + 1))
 	gotoIfError2(clean, ListSwapchainRef_reservex(&twm->swapchains, windowManager->windows.length))
 
+	if(!twm->initialized) {
+		gotoIfError2(clean, ListCommandListRef_pushBackx(&twm->commandLists, twm->asCommandList))
+		twm->initialized = true;
+	}
+
 	gotoIfError2(clean, ListCommandListRef_pushBackx(&twm->commandLists, twm->prepCommandList))
 
 	RenderTextureRef *renderTex = NULL;
@@ -368,6 +375,8 @@ void onManagerDraw(WindowManager *windowManager) {
 
 	if (twm->tlas)
 		data.tlasExt = TLASRef_ptr(twm->tlas)->handle;
+
+	Log_debugLnx("%u", data.renderTargetWrite);
 
 	Buffer runtimeData = Buffer_createRefConst((const U32*)&data, sizeof(data));
 	gotoIfError2(clean, GraphicsDeviceRef_submitCommands(
@@ -1247,23 +1256,12 @@ void onManagerCreate(WindowManager *manager) {
 		sizeof(Dispatch),
 		&twm->indirectDispatchBuffer
 	))
+	
 
-	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &twm->prepCommandList))
-
-	CommandListRef *commandList = twm->prepCommandList;
-
-	//Record commands
+	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, KIBI, 64, 64, true, &twm->asCommandList))
+	CommandListRef *commandList = twm->asCommandList;
 
 	gotoIfError2(clean, CommandListRef_begin(commandList, true, U64_MAX))
-
-	typedef enum EScopes {
-		EScopes_PrepareBLASes,
-		EScopes_PrepareTLASes,
-		EScopes_PrepareIndirect,
-		EScopes_IndirectCalcConstant
-	} EScopes;
-
-	EScopes scopes; (void)scopes;
 
 	//Prepare RTAS
 
@@ -1276,7 +1274,7 @@ void onManagerCreate(WindowManager *manager) {
 	if(twm->enableRt) {
 
 		depsArr.length = 0;
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareBLASes, depsArr).genericError) {
+		if(!CommandListRef_startScope(commandList, transitionArr, 0 /* id */, depsArr).genericError) {
 			gotoIfError2(clean, CommandListRef_updateBLASExt(commandList, twm->blas))
 			gotoIfError2(clean, CommandListRef_updateBLASExt(commandList, twm->blasAABB))
 			gotoIfError2(clean, CommandListRef_endScope(commandList))
@@ -1284,15 +1282,31 @@ void onManagerCreate(WindowManager *manager) {
 
 		deps[0] =  (CommandScopeDependency) {
 			.type = ECommandScopeDependencyType_Conditional,
-			.id = EScopes_PrepareBLASes
+			.id = 0
 		};
 
 		depsArr.length = 1;
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PrepareTLASes, depsArr).genericError) {
+		if(!CommandListRef_startScope(commandList, transitionArr, 1 /* id */, depsArr).genericError) {
 			gotoIfError2(clean, CommandListRef_updateTLASExt(commandList, twm->tlas))
 			gotoIfError2(clean, CommandListRef_endScope(commandList))
 		}
 	}
+
+	gotoIfError2(clean, CommandListRef_end(commandList))
+
+	//Record commands
+	
+	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &twm->prepCommandList))
+	commandList = twm->prepCommandList;
+
+	gotoIfError2(clean, CommandListRef_begin(commandList, true, U64_MAX))
+
+	typedef enum EScopes {
+		EScopes_PrepareIndirect,
+		EScopes_IndirectCalcConstant
+	} EScopes;
+
+	EScopes scopes; (void)scopes;
 
 	//Prepare 2 indirect draw calls and update constant color
 
@@ -1390,6 +1404,7 @@ void onManagerDestroy(WindowManager *manager) {
 	PipelineRef_dec(&twm->inlineRaytracingTest);
 	PipelineRef_dec(&twm->raytracingPipelineTest);
 	CommandListRef_dec(&twm->prepCommandList);
+	CommandListRef_dec(&twm->asCommandList);
 
 	ListCommandListRef_freex(&twm->commandLists);
 	ListSwapchainRef_freex(&twm->swapchains);
