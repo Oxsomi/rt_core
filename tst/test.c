@@ -55,10 +55,6 @@
 #include "atmos_helper.h"
 #include "types/math.h"
 
-#define _GRAPHICS_API GRAPHICS_API_D3D12			//TODO: Change this for testing
-//#define _GRAPHICS_API GRAPHICS_API_VULKAN
-#include "graphics/generic/application.h"
-
 const Bool Platform_useWorkingDirectory = false;
 
 //Globals
@@ -696,7 +692,7 @@ void onManagerCreate(WindowManager *manager) {
 		GraphicsInstanceRef_ptr(twm->instance),
 		requiredCapabilities,
 		GraphicsInstance_vendorMaskAll,
-		/*1 << EGraphicsDeviceType_Integrated, */GraphicsInstance_deviceTypeAll,
+		/*1 << EGraphicsDeviceType_CPU, */GraphicsInstance_deviceTypeAll,
 		&deviceInfo
 	))
 
@@ -1458,4 +1454,6 @@ clean:
 	return s_uccess ? 1 : -1;
 }
 
-void Program_exit() { }
+void Program_exit() {
+	Log_debugLnx("Clean exit");
+}

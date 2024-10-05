@@ -28,7 +28,7 @@ struct VSOutput {
 };
 
 [[oxc::stage("vertex")]]
-VSOutput mainVS(F32x2 pos : POS0, F32x2 uv : TEXCOORD0) {
+VSOutput mainVS(F32x2 pos : TEXCOORD0, F32x2 uv : TEXCOORD1) {
 	VSOutput output = (VSOutput) 0;
 	output.pos = F32x4(pos, 0, 1);
 	output.uv = uv;

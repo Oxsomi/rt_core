@@ -124,3 +124,4 @@ add_virtual_files(
 
 configure_icon(rt_core "${CMAKE_CURRENT_SOURCE_DIR}/res/logo.ico")
 configure_virtual_files(rt_core)
+apply_dependencies(rt_core)
