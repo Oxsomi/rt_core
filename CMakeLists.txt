@@ -48,7 +48,7 @@ else()
 	set(SIMD 0)
 endif()
 
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm") 
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
 	message("-- Enabling ARM specific optimizations")
 	set(ARM ON)
 else()
@@ -85,7 +85,7 @@ else()
 	add_compile_options(-fno-unsafe-math-optimizations)
 	add_compile_options(-fms-extensions)
 	add_compile_options(-flto -Wall -Wextra -Werror)
-	
+
 	if(NOT CMAKE_${lang}_COMPILER_VERSION VERSION_LESS 4.7)
 		add_compile_options(-fno-fat-lto-objects)
 	endif()

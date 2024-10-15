@@ -19,13 +19,13 @@
 */
 
 #include "platforms/ext/listx_impl.h"
-#include "types/buffer.h"
-#include "types/string.h"
-#include "types/time.h"
-#include "types/flp.h"
-#include "formats/bmp.h"
-#include "formats/dds.h"
-#include "formats/oiSH.h"
+#include "types/container/buffer.h"
+#include "types/container/string.h"
+#include "types/base/time.h"
+#include "types/math/flp.h"
+#include "formats/bmp/bmp.h"
+#include "formats/dds/dds.h"
+#include "formats/oiSH/sh_file.h"
 #include "platforms/keyboard.h"
 #include "platforms/platform.h"
 #include "platforms/input_device.h"
@@ -36,8 +36,6 @@
 #include "platforms/ext/errorx.h"
 #include "platforms/ext/bufferx.h"
 #include "platforms/ext/stringx.h"
-#include "platforms/ext/bmpx.h"
-#include "platforms/ext/ddsx.h"
 #include "platforms/ext/formatx.h"
 #include "graphics/generic/instance.h"
 #include "graphics/generic/device.h"
@@ -53,7 +51,7 @@
 #include "graphics/generic/blas.h"
 #include "graphics/generic/tlas.h"
 #include "atmos_helper.h"
-#include "types/math.h"
+#include "types/math/math.h"
 
 const Bool Platform_useWorkingDirectory = false;
 
@@ -686,7 +684,8 @@ void onManagerCreate(WindowManager *manager) {
 	GraphicsDeviceCapabilities requiredCapabilities = (GraphicsDeviceCapabilities) { 0 };
 	GraphicsDeviceInfo deviceInfo = (GraphicsDeviceInfo) { 0 };
 
-	gotoIfError2(clean, GraphicsInstance_create(applicationInfo, EGraphicsInstanceFlags_None, &twm->instance))
+	gotoIfError3(clean, GraphicsInterface_create(e_rr))
+	gotoIfError2(clean, GraphicsInstance_create(applicationInfo, EGraphicsApi_Direct3D12, EGraphicsInstanceFlags_None, &twm->instance))
 
 	gotoIfError2(clean, GraphicsInstance_getPreferredDevice(
 		GraphicsInstanceRef_ptr(twm->instance),
@@ -785,7 +784,7 @@ void onManagerCreate(WindowManager *manager) {
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.oiSH");
 		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
-		
+
 		U32 main = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
 			tmpBinaries[0],
@@ -810,7 +809,7 @@ void onManagerCreate(WindowManager *manager) {
 		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.oiSH");
 		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
-		
+
 		main = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
 			tmpBinaries[0],
@@ -846,7 +845,7 @@ void onManagerCreate(WindowManager *manager) {
 			gotoIfError2(clean, ListCharString_createRefConst(
 				uniformsArr, sizeof(uniformsArr) / sizeof(uniformsArr[0]), &uniforms
 			))
-		
+
 			main = GraphicsDeviceRef_getFirstShaderEntry(
 				twm->device,
 				tmpBinaries[0],
@@ -972,7 +971,7 @@ void onManagerCreate(WindowManager *manager) {
 			&twm->graphicsDepthTest,
 			e_rr
 		))
-		
+
 		SHFile_freex(&tmpBinaries[0]);
 		SHFile_freex(&tmpBinaries[1]);
 		Buffer_freex(&tempBuffers[0]);
@@ -1042,7 +1041,7 @@ void onManagerCreate(WindowManager *manager) {
 			&twm->raytracingPipelineTest,
 			e_rr
 		))
-		
+
 		SHFile_freex(&tmpBinaries[0]);
 		Buffer_freex(&tempBuffers[0]);
 	}
@@ -1250,7 +1249,7 @@ void onManagerCreate(WindowManager *manager) {
 		sizeof(Dispatch),
 		&twm->indirectDispatchBuffer
 	))
-	
+
 
 	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, KIBI, 64, 64, true, &twm->asCommandList))
 	CommandListRef *commandList = twm->asCommandList;
@@ -1289,7 +1288,7 @@ void onManagerCreate(WindowManager *manager) {
 	gotoIfError2(clean, CommandListRef_end(commandList))
 
 	//Record commands
-	
+
 	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &twm->prepCommandList))
 	commandList = twm->prepCommandList;
 
@@ -1418,9 +1417,16 @@ void onManagerDestroy(WindowManager *manager) {
 	GraphicsInstanceRef_dec(&twm->instance);
 }
 
-I32 Program_run() {
+Platform_defineEntrypoint() {
 
-	Error err = Error_none(), *e_rr = &err;
+	Error err = Platform_create(argc, argv, Platform_getData(), NULL, true);
+
+	if(err.genericError) {
+		Error_printLnx(err);
+		return -2;
+	}
+
+	Error *e_rr = &err;
 	Bool s_uccess = true;
 
 	WindowManagerCallbacks callbacks;
@@ -1451,6 +1457,7 @@ I32 Program_run() {
 clean:
 	WindowManager_free(&manager);
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+	Platform_cleanup();
 	return s_uccess ? 1 : -1;
 }
 

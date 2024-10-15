@@ -20,8 +20,8 @@
 */
 
 #include "atmos_helper.h"
-#include "types/time.h"
-#include "types/math.h"
+#include "types/base/time.h"
+#include "types/math/math.h"
 
 const F32 AtmosHelper_au = 1.496e11f;
 

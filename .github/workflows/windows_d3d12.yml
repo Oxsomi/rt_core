@@ -28,9 +28,13 @@ jobs:
         path: ~/.conan2/p
         key: ${{ runner.os }}-${{ hashFiles('**/external/dxc') }}
     - name: build for release
-      run: cmd /C build.bat Release True False False
+      run: cmd /C build.bat Release True False False False
     - name: build for debug
-      run: cmd /C build.bat Debug True False False
+      run: cmd /C build.bat Debug True False False False
+    - name: build for release dynamic
+      run: cmd /C build.bat Release True False False True
+    - name: build for debug dynamic
+      run: cmd /C build.bat Debug True False False True
     - name: Delete non package files for cache
       run: bash -c "rm -rf ~/.conan2/p/b/*/b"
     - name: Cache Build

@@ -23,12 +23,14 @@ class rt_core(ConanFile):
 
 	options = {
 		"forceVulkan": [ True, False ],
-		"enableSIMD": [ True, False ]
+		"enableSIMD": [ True, False ],
+		"dynamicLinkingGraphics": [ True, False ]
 	}
 
 	default_options = {
 		"forceVulkan": False,
-		"enableSIMD": True
+		"enableSIMD": True,
+		"dynamicLinkingGraphics": False
 	}
 
 	exports_sources = [ "inc/*", "cmake/*" ]
@@ -46,12 +48,6 @@ class rt_core(ConanFile):
 		deps.generate()
 
 		tc = CMakeToolchain(self)
-		tc.cache_variables["ForceFloatFallback"] = False
-		tc.cache_variables["EnableOxC3CLI"] = False
-		tc.cache_variables["EnableSIMD"] = self.options.enableSIMD
-		tc.cache_variables["ForceVulkan"] = self.options.forceVulkan
-		tc.cache_variables["EnableShaderCompiler"] = False
-		tc.cache_variables["CLIGraphics"] = False
 		tc.cache_variables["CMAKE_CONFIGURATION_TYPES"] = str(self.settings.build_type)
 		tc.generate()
 
@@ -74,25 +70,27 @@ class rt_core(ConanFile):
 		cmake.build()
 
 	def build_requirements(self):
-		self.tool_requires("oxc3/0.2.049", options = {
+		self.tool_requires("oxc3/0.2.057", options = {
 			"forceVulkan": self.options.forceVulkan,
 			"enableSIMD": True,
 			"enableTests": False,
 			"enableOxC3CLI": True,
 			"forceFloatFallback": False,
 			"enableShaderCompiler": True,
-			"cliGraphics": False
+			"cliGraphics": False,
+			"dynamicLinkingGraphics": True
 		})
 
 	def requirements(self):
-		self.requires("oxc3/0.2.049", options = {
+		self.requires("oxc3/0.2.057", options = {
 			"forceVulkan": self.options.forceVulkan,
 			"enableSIMD": self.options.enableSIMD,
 			"enableTests": False,
 			"enableOxC3CLI": False,
 			"forceFloatFallback": False,
 			"enableShaderCompiler": False,
-			"cliGraphics": False
+			"cliGraphics": False,
+			"dynamicLinkingGraphics": self.options.dynamicLinkingGraphics
 		})
 
 	def package(self):

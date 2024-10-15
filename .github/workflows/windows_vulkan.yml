@@ -31,6 +31,10 @@ jobs:
       run: cmd /C build.bat Release True True False
     - name: build for debug
       run: cmd /C build.bat Debug True True False
+    - name: build for release dynamic
+      run: cmd /C build.bat Release True True True
+    - name: build for debug dynamic
+      run: cmd /C build.bat Debug True True True
     - name: Delete non package files for cache
       run: bash -c "rm -rf ~/.conan2/p/b/*/b"
     - name: Cache Build

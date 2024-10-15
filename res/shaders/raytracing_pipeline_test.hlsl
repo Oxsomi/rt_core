@@ -95,7 +95,7 @@ void mainRaygen() {
 
 	//ray.Origin = ray.Origin;
 	//ray.Direction = normalize(F32x3(uv, -1));
-	
+
 
 	//Trace against
 
