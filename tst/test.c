@@ -204,10 +204,23 @@ F32 targetFps = 60;		//Only if virtual window (indicates timeStep)
 
 void onUpdate(Window *w, F64 dt) {
 
-	if(w->type == EWindowType_Physical)
-		((TestWindow*)w->extendedData.ptr)->time += dt;
+	F64 *time = &((TestWindow*)w->extendedData.ptr)->time;
 
-	else ((TestWindow*)w->extendedData.ptr)->time += 1 / targetFps;
+	if(w->type == EWindowType_Physical)
+		*time += dt;
+
+	else *time += 1 / targetFps;
+
+	//Toggle every 15s
+
+	/*F64 mod = 0;
+	F64_mod(*time, 15, &mod);
+
+	F64 mod2 = 0;
+	F64_mod(*time - dt, 15, &mod2);
+
+	if(mod2 > mod)
+		Window_toggleFullScreen(w, NULL);*/
 
 	//Check for keys
 
@@ -379,7 +392,8 @@ void onManagerDraw(WindowManager *windowManager) {
 	twm->timeSinceLastRender = twm->time;
 
 clean:
-	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+	if(!s_uccess)
+		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
 
 void onResize(Window *w) {
@@ -619,7 +633,8 @@ void onResize(Window *w) {
 	gotoIfError2(clean, CommandListRef_end(commandList))
 
 clean:
-	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+	if(!s_uccess)
+		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
 
 void onCreate(Window *w) {
@@ -638,7 +653,8 @@ void onCreate(Window *w) {
 	}
 
 clean:
-	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+	if(!s_uccess)
+		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
 
 void onDestroy(Window *w) {
@@ -691,7 +707,9 @@ void onManagerCreate(WindowManager *manager) {
 		GraphicsInstanceRef_ptr(twm->instance),
 		requiredCapabilities,
 		GraphicsInstance_vendorMaskAll,
-		/*1 << EGraphicsDeviceType_CPU, */GraphicsInstance_deviceTypeAll,
+		//1 << EGraphicsDeviceType_Integrated,
+		//1 << EGraphicsDeviceType_CPU,
+		GraphicsInstance_deviceTypeAll,
 		&deviceInfo
 	))
 
@@ -725,7 +743,7 @@ void onManagerCreate(WindowManager *manager) {
 		//Normal crabbage
 
 		CharString path = CharString_createRefCStrConst("//rt_core/images/crabbage.bmp");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 
 		BMPInfo bmpInfo;
 		gotoIfError2(clean, BMP_readx(tempBuffers[0], &bmpInfo, &tempBuffers[2]))
@@ -750,14 +768,14 @@ void onManagerCreate(WindowManager *manager) {
 		//DDS crabbage
 
 		path = CharString_createRefCStrConst("//rt_core/images/crabbage_mips.dds");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 
 		DDSInfo ddsInfo;
 		gotoIfError2(clean, DDS_readx(tempBuffers[0], &ddsInfo, &subResource))
 
 		path = CharString_createRefCStrConst("test_crabbage_mips.dds");
 		gotoIfError2(clean, DDS_writex(subResource, ddsInfo, &tempBuffers[1]))
-		gotoIfError3(clean, File_write(tempBuffers[1], path, U64_MAX, e_rr))
+		gotoIfError3(clean, File_writex(tempBuffers[1], path, 0, 0, U64_MAX, false, e_rr))
 		Buffer_freex(&tempBuffers[1]);
 
 		gotoIfError2(clean, GraphicsDeviceRef_createTexture(
@@ -782,7 +800,7 @@ void onManagerCreate(WindowManager *manager) {
 		//Indirect prepare
 
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.oiSH");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
 
 		U32 main = GraphicsDeviceRef_getFirstShaderEntry(
@@ -807,7 +825,7 @@ void onManagerCreate(WindowManager *manager) {
 		//Indirect compute
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.oiSH");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
 
 		main = GraphicsDeviceRef_getFirstShaderEntry(
@@ -834,7 +852,7 @@ void onManagerCreate(WindowManager *manager) {
 		if (twm->enableRt) {
 
 			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.oiSH");
-			gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+			gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 			gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
 
 			CharString uniformsArr[2];
@@ -871,11 +889,11 @@ void onManagerCreate(WindowManager *manager) {
 
 	{
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.oiSH");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/depth_test.oiSH");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[1], e_rr))
+		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[1], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[1], false, &tmpBinaries[1], e_rr))
 
 		ListSHFile binaries = (ListSHFile) { 0 };
@@ -983,7 +1001,7 @@ void onManagerCreate(WindowManager *manager) {
 	if (twm->enableRt) {
 
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.oiSH");
-		gotoIfError3(clean, File_read(path, U64_MAX, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
 
 		U32 mainMiss = GraphicsDeviceRef_getFirstShaderEntry(
@@ -1369,7 +1387,8 @@ clean:
 	for(U64 i = 0; i < sizeof(tmpBinaries) / sizeof(tmpBinaries[0]); ++i)
 		SHFile_freex(&tmpBinaries[i]);
 
-	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+	if(!s_uccess)
+		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
 
 void onManagerDestroy(WindowManager *manager) {
