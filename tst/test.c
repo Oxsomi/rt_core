@@ -53,7 +53,8 @@
 #include "atmos_helper.h"
 #include "types/math/math.h"
 
-const Bool Platform_useWorkingDirectory = false;
+#define OBJECT_COUNT 1000000
+#define DISABLE_F64
 
 //Globals
 
@@ -74,13 +75,16 @@ typedef struct TestWindowManager {
 	DeviceBufferRef *deviceBuffer;					//Constant F32x3 for animating color
 	DeviceBufferRef *viewProjMatrices;				//F32x4x4 (view, proj, viewProj)(normal, inverse)
 
+	DeviceBufferRef *objectsGlobal;					//sizeof(F64x3) or sizeof(U32x4)
+	DeviceBufferRef *objectsLocal;					//sizeof(F32x3)
+
 	DeviceTextureRef *crabbage2049x, *crabbageCompressed;
 
 	BLASRef *blas;									//If rt is on, the BLAS of a simple plane
 	BLASRef *blasAABB;								//If rt is on, the BLAS of a few boxes
 	TLASRef *tlas;									//If rt is on, contains the scene's AS
 
-	PipelineRef *prepareIndirectPipeline, *indirectCompute, *inlineRaytracingTest;
+	PipelineRef *prepareIndirectPipeline, *indirectCompute, *inlineRaytracingTest, *performanceTest;
 	PipelineRef *graphicsTest, *graphicsDepthTest;
 	PipelineRef *raytracingPipelineTest;
 	ListCommandListRef commandLists;
@@ -351,10 +355,13 @@ void onManagerDraw(WindowManager *windowManager) {
 		U32 padding0;
 
 		F32 skyDir[3];
-		U32 padding1;
+		U32 objectsLocal;
 
 		F32 camPos[3];
-		U32 padding2;
+		U32 objectsGlobal;
+
+		U32 objectsLocalWrite;
+		U32 padding[3];
 
 	} RuntimeData;
 
@@ -366,18 +373,27 @@ void onManagerDraw(WindowManager *windowManager) {
 	F32x4 camPos = twm->camPos;
 
 	RuntimeData data = (RuntimeData) {
+
 		.constantColorRead = deviceBuf->readHandle,
 		.constantColorWrite = deviceBuf->writeHandle,
 		.indirectDrawWrite = DeviceBufferRef_ptr(twm->indirectDrawBuffer)->writeHandle,
 		.indirectDispatchWrite = DeviceBufferRef_ptr(twm->indirectDispatchBuffer)->writeHandle,
+
 		.viewProjMatricesWrite = viewProjMatrices->writeHandle,
 		.viewProjMatricesRead = viewProjMatrices->readHandle,
 		.crabbage2049x = TextureRef_getCurrReadHandle(twm->crabbage2049x, 0),
 		.crabbageCompressed = TextureRef_getCurrReadHandle(twm->crabbageCompressed, 0),
+
 		.sampler = SamplerRef_ptr(twm->anisotropic)->samplerLocation,
 		.renderTargetWrite = TextureRef_getCurrWriteHandle(renderTex, 0),
+
 		.skyDir = { F32x4_x(skyDir), F32x4_y(skyDir), F32x4_z(skyDir) },
-		.camPos = { F32x4_x(camPos), F32x4_y(camPos), F32x4_z(camPos) }
+		.objectsLocal = DeviceBufferRef_ptr(twm->objectsLocal)->readHandle,
+
+		.camPos = { F32x4_x(camPos), F32x4_y(camPos), F32x4_z(camPos) },
+		.objectsGlobal = DeviceBufferRef_ptr(twm->objectsGlobal)->readHandle,
+
+		.objectsLocalWrite = DeviceBufferRef_ptr(twm->objectsLocal)->writeHandle
 	};
 
 	if (twm->tlas)
@@ -460,7 +476,8 @@ void onResize(Window *w) {
 			EScopes_RaytracingTest,
 			EScopes_RaytracingPipelineTest,
 			EScopes_GraphicsTest,
-			EScopes_Copy
+			EScopes_Copy,
+			EScopes_PerformanceTest
 		};
 
 		Transition transitions[5] = { 0 };
@@ -474,8 +491,9 @@ void onResize(Window *w) {
 		//Test raytracing
 
 		Bool hasRaytracing = twm->enableRt;
+		Bool disable = hasRaytracing;
 
-		if(hasRaytracing) {
+		if(disable && hasRaytracing) {
 
 			//Write using inline RT
 
@@ -562,7 +580,7 @@ void onResize(Window *w) {
 		depsArr.length = 2;
 		transitionArr.length = 5;
 
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
+		if(disable && !CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
 				.image = tw->renderTexture,
@@ -613,6 +631,28 @@ void onResize(Window *w) {
 			gotoIfError2(clean, CommandListRef_endScope(commandList))
 		}
 
+		//Performance test
+		
+		transitions[0] = (Transition) {
+			.resource = twm->objectsGlobal,
+			.stage = EPipelineStage_Compute
+		};
+
+		transitions[1] = (Transition) {
+			.resource = twm->objectsLocal,
+			.stage = EPipelineStage_Compute,
+			.isWrite = true
+		};
+
+		depsArr.length = 0;
+		transitionArr.length = 2;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_PerformanceTest, depsArr).genericError) {
+			gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, twm->performanceTest))
+			gotoIfError2(clean, CommandListRef_dispatch1D(commandList, (OBJECT_COUNT + 255) >> 8))
+			gotoIfError2(clean, CommandListRef_endScope(commandList))
+		}
+
 		//Copy
 
 		deps[0] = (CommandScopeDependency) { .id = EScopes_RaytracingTest };
@@ -620,7 +660,7 @@ void onResize(Window *w) {
 		depsArr.length = 2;
 		transitionArr.length = 0;
 
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Copy, depsArr).genericError) {
+		if(disable && !CommandListRef_startScope(commandList, transitionArr, EScopes_Copy, depsArr).genericError) {
 
 			gotoIfError2(clean, CommandListRef_copyImage(
 				commandList, tw->renderTexture, tw->swapchain, ECopyType_All, (CopyImageRegion) { 0 }
@@ -675,6 +715,26 @@ typedef struct VertexDataBuffer {
 
 Bool renderVirtual = false;		//Whether there's a physical swapchain
 
+void nextDoubles(F64 res[3]) {
+
+	U64 rng[3] = { 0 };
+	Buffer buf = Buffer_createRef(rng, sizeof(rng));
+
+	if(!Buffer_csprng(buf))
+		Log_errorLnx("nextDoubles: Buffer_csprng failed");
+
+	for(U8 i = 0; i < 3; ++i) {
+
+		U64 rngi = rng[i];
+		U64 sign = rngi & ((U64)1 << 63);
+		U64 mantissa = rngi & (((U64)1 << 52) - 1);
+		U64 exponent = (((rngi >> 52) & 0x1F) + ((1 << 10) - 1) - 5);
+
+		U64 doub = sign | mantissa | (exponent << 52);
+		res[i] = *(const F64*)&doub;
+	}
+}
+
 void onManagerCreate(WindowManager *manager) {
 
 	Error err = Error_none(), *e_rr = &err;
@@ -701,7 +761,7 @@ void onManagerCreate(WindowManager *manager) {
 	GraphicsDeviceInfo deviceInfo = (GraphicsDeviceInfo) { 0 };
 
 	gotoIfError3(clean, GraphicsInterface_create(e_rr))
-	gotoIfError2(clean, GraphicsInstance_create(applicationInfo, EGraphicsApi_Direct3D12, EGraphicsInstanceFlags_None, &twm->instance))
+	gotoIfError2(clean, GraphicsInstance_create(applicationInfo, EGraphicsApi_Vulkan, EGraphicsInstanceFlags_DisableDebug, &twm->instance))
 
 	gotoIfError2(clean, GraphicsInstance_getPreferredDevice(
 		GraphicsInstanceRef_ptr(twm->instance),
@@ -715,7 +775,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	GraphicsDeviceInfo_print(GraphicsInstanceRef_ptr(twm->instance)->api, &deviceInfo, true);
 
-	gotoIfError2(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, EGraphicsDeviceFlags_None, &twm->device))
+	gotoIfError2(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, EGraphicsDeviceFlags_DisableDebug, &twm->device))
 
 	twm->enableRt = deviceInfo.capabilities.features & (EGraphicsFeatures_RayQuery | EGraphicsFeatures_RayPipeline);
 
@@ -807,7 +867,9 @@ void onManagerCreate(WindowManager *manager) {
 			twm->device,
 			tmpBinaries[0],
 			CharString_createRefCStrConst("main"),
-			(ListCharString) { 0 }
+			(ListCharString) { 0 },
+			ESHExtension_None,
+			ESHExtension_None
 		);
 
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
@@ -832,7 +894,9 @@ void onManagerCreate(WindowManager *manager) {
 			twm->device,
 			tmpBinaries[0],
 			CharString_createRefCStrConst("main"),
-			(ListCharString) { 0 }
+			(ListCharString) { 0 },
+			ESHExtension_None,
+			ESHExtension_None
 		);
 
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
@@ -841,6 +905,39 @@ void onManagerCreate(WindowManager *manager) {
 			CharString_createRefCStrConst("Indirect compute dispatch"),
 			main,
 			&twm->indirectCompute,
+			e_rr
+		))
+
+		SHFile_freex(&tmpBinaries[0]);
+		Buffer_freex(&tempBuffers[0]);
+
+		//Performance test
+
+		path = CharString_createRefCStrConst("//rt_core/shaders/performance_test.oiSH");
+		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
+		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+
+		ESHExtension disallowExt = ESHExtension_None;
+
+		#ifdef DISABLE_F64
+			disallowExt = ESHExtension_F64;
+		#endif
+
+		main = GraphicsDeviceRef_getFirstShaderEntry(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("main"),
+			(ListCharString) { 0 },
+			disallowExt,
+			ESHExtension_None
+		);
+
+		gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
+			twm->device,
+			tmpBinaries[0],
+			CharString_createRefCStrConst("Performance test"),
+			main,
+			&twm->performanceTest,
 			e_rr
 		))
 
@@ -868,7 +965,9 @@ void onManagerCreate(WindowManager *manager) {
 				twm->device,
 				tmpBinaries[0],
 				CharString_createRefCStrConst("main"),
-				uniforms
+				uniforms,
+				ESHExtension_None,
+				ESHExtension_None
 			);
 
 			gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
@@ -903,21 +1002,27 @@ void onManagerCreate(WindowManager *manager) {
 			twm->device,
 			tmpBinaries[0],
 			CharString_createRefCStrConst("mainVS"),
-			(ListCharString) { 0 }
+			(ListCharString) { 0 },
+			ESHExtension_None,
+			ESHExtension_None
 		);
 
 		U32 mainPS = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
 			tmpBinaries[0],
 			CharString_createRefCStrConst("mainPS"),
-			(ListCharString) { 0 }
+			(ListCharString) { 0 },
+			ESHExtension_None,
+			ESHExtension_None
 		);
 
 		U32 mainVSDepth = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
 			tmpBinaries[1],
 			CharString_createRefCStrConst("mainVS"),
-			(ListCharString) { 0 }
+			(ListCharString) { 0 },
+			ESHExtension_None,
+			ESHExtension_None
 		);
 
 		//Pipeline without depth stencil
@@ -1008,21 +1113,27 @@ void onManagerCreate(WindowManager *manager) {
 			twm->device,
 			tmpBinaries[0],
 			CharString_createRefCStrConst("mainMiss"),
-			(ListCharString) { 0 }
+			(ListCharString) { 0 },
+			ESHExtension_None,
+			ESHExtension_None
 		);
 
 		U32 mainClosestHit = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
 			tmpBinaries[0],
 			CharString_createRefCStrConst("mainClosestHit"),
-			(ListCharString) { 0 }
+			(ListCharString) { 0 },
+			ESHExtension_None,
+			ESHExtension_None
 		);
 
 		U32 mainRaygen = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
 			tmpBinaries[0],
 			CharString_createRefCStrConst("mainRaygen"),
-			(ListCharString) { 0 }
+			(ListCharString) { 0 },
+			ESHExtension_None,
+			ESHExtension_None
 		);
 
 		PipelineStage stageArr[] = {
@@ -1250,6 +1361,60 @@ void onManagerCreate(WindowManager *manager) {
 		&twm->viewProjMatrices
 	))
 
+	#ifdef DISABLE_F64
+
+		U64 stride = sizeof(U64) * 3;
+		//U64 stride = sizeof(U32) * 4;
+		gotoIfError2(clean, Buffer_createUninitializedBytesx(stride * OBJECT_COUNT, &tempBuffers[0]))
+
+		//U32 *ptr = (U32*) tempBuffers[0].ptr;
+		U64 *ptr = (U64*) tempBuffers[0].ptr;
+
+		for (U64 i = 0, j = 0; i < OBJECT_COUNT; ++i) {
+
+			F64 xyz[3];
+			nextDoubles(xyz);
+
+			FP37f4 vx = FP37f4_fromDouble(xyz[0]);
+			FP37f4 vy = FP37f4_fromDouble(xyz[1]);
+			FP37f4 vz = FP37f4_fromDouble(xyz[2]);
+
+			ptr[j++] = vx;
+			ptr[j++] = vy;
+			ptr[j++] = vz;
+
+			/*ptr[j++] = (U32)vx;
+			ptr[j++] = (U32) vy;
+			ptr[j++] = (U32) vz;
+			ptr[j++] = (U32)((vx >> 32) | (vy >> 32 << 10) | (vz >> 32 << 20));*/
+		}
+
+	#else
+
+		U64 stride = sizeof(F64) * 3;
+		gotoIfError2(clean, Buffer_createUninitializedBytesx(stride * OBJECT_COUNT, &tempBuffers[0]))
+		
+		F64 *ptr = (F64*) tempBuffers[0].ptr;
+
+		for (U64 i = 0, j = 0; i < OBJECT_COUNT; ++i, j += 3)
+			nextDoubles(&ptr[j]);
+
+	#endif
+
+	name = CharString_createRefCStrConst("Instances global buffer");
+	gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
+		twm->device,
+		EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRead, name, &tempBuffers[0],
+		&twm->objectsGlobal
+	))
+
+	name = CharString_createRefCStrConst("Instances local buffer");
+	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
+		twm->device,
+		EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRW, name, sizeof(F32) * 3 * OBJECT_COUNT,
+		&twm->objectsLocal
+	))
+
 	name = CharString_createRefCStrConst("Test indirect draw buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
@@ -1406,6 +1571,9 @@ void onManagerDestroy(WindowManager *manager) {
 	DeviceBufferRef_dec(&twm->indirectDrawBuffer);
 	DeviceBufferRef_dec(&twm->indirectDispatchBuffer);
 
+	DeviceBufferRef_dec(&twm->objectsLocal);
+	DeviceBufferRef_dec(&twm->objectsGlobal);
+
 	DeviceTextureRef_dec(&twm->crabbage2049x);
 	DeviceTextureRef_dec(&twm->crabbageCompressed);
 
@@ -1414,6 +1582,7 @@ void onManagerDestroy(WindowManager *manager) {
 	PipelineRef_dec(&twm->prepareIndirectPipeline);
 	PipelineRef_dec(&twm->indirectCompute);
 	PipelineRef_dec(&twm->inlineRaytracingTest);
+	PipelineRef_dec(&twm->performanceTest);
 	PipelineRef_dec(&twm->raytracingPipelineTest);
 	CommandListRef_dec(&twm->prepCommandList);
 	CommandListRef_dec(&twm->asCommandList);

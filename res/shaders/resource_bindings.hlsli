@@ -39,13 +39,33 @@ enum EResourceBinding {
 	EResourceBinding_Padding,
 
 	EResourceBinding_SunDirXYZ,
-	EResourceBinding_Padding1 = EResourceBinding_SunDirXYZ + 3,
+	EResourceBinding_ObjectTransformsLocal = EResourceBinding_SunDirXYZ + 3,
 
 	EResourceBinding_CamPosXYZ,
-	EResourceBinding_Next = EResourceBinding_CamPosXYZ + 3
+	EResourceBinding_ObjectTransformsGlobal = EResourceBinding_CamPosXYZ + 3,
+
+	EResourceBinding_ObjectTransformsLocalRW,
+	EResourceBinding_Next
 };
 
 struct ViewProjMatrices {
 	F32x4x4 view, proj, viewProj;
 	F32x4x4 viewInv, projInv, viewProjInv;
+};
+
+#ifdef __OXC_EXT_I64
+	struct TransformPreciseFixed {		//Stride 4, Length 16
+		//U32x4 pos;		//fixedPointUnpack
+		U64x3 pos;
+	};
+#endif
+
+#ifdef __OXC_EXT_F64
+	struct TransformPreciseDouble {		//Stride 8, Length 24
+		F64x3 pos;
+	};
+#endif
+
+struct TransformImprecise {			//Stride 4, Length 12
+	F32x3 pos;		//Relative to the camera origin
 };

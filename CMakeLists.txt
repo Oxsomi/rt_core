@@ -109,12 +109,21 @@ target_compile_definitions(rt_core PUBLIC -D_ENABLE_SIMD=${SIMD})
 target_link_libraries(rt_core PUBLIC oxc3::oxc3)
 set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/test)
 
-add_virtual_files(
-	TARGET rt_core NAME shaders
-	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
-	SELF ${CMAKE_CURRENT_SOURCE_DIR}
-	ARGS -threads "100%"
-)
+if(WIN32)
+	add_virtual_files(
+		TARGET rt_core NAME shaders
+		ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
+		SELF ${CMAKE_CURRENT_SOURCE_DIR}
+		ARGS -threads "100%%"
+	)
+else()
+	add_virtual_files(
+		TARGET rt_core NAME shaders
+		ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
+		SELF ${CMAKE_CURRENT_SOURCE_DIR}
+		ARGS -threads "100%"
+	)
+endif()
 
 add_virtual_files(
 	TARGET rt_core NAME images
