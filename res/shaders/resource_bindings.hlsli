@@ -36,16 +36,13 @@ enum EResourceBinding {
 	EResourceBinding_Sampler,
 	EResourceBinding_TLAS,
 	EResourceBinding_RenderTargetRW,
-	EResourceBinding_Padding,
+	EResourceBinding_Padding0,
 
 	EResourceBinding_SunDirXYZ,
-	EResourceBinding_ObjectTransformsLocal = EResourceBinding_SunDirXYZ + 3,
+	EResourceBinding_Padding1,
 
 	EResourceBinding_CamPosXYZ,
-	EResourceBinding_ObjectTransformsGlobal = EResourceBinding_CamPosXYZ + 3,
-
-	EResourceBinding_ObjectTransformsLocalRW,
-	EResourceBinding_Next
+	EResourceBinding_Padding2
 };
 
 struct ViewProjMatrices {

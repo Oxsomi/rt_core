@@ -48,6 +48,8 @@ class rt_core(ConanFile):
 		deps.generate()
 
 		tc = CMakeToolchain(self)
+		tc.cache_variables["ForceVulkan"] = self.options.forceVulkan
+		tc.cache_variables["DynamicLinkingGraphics"] = self.options.dynamicLinkingGraphics
 		tc.cache_variables["CMAKE_CONFIGURATION_TYPES"] = str(self.settings.build_type)
 		tc.generate()
 
@@ -70,7 +72,7 @@ class rt_core(ConanFile):
 		cmake.build()
 
 	def build_requirements(self):
-		self.tool_requires("oxc3/0.2.082", options = {
+		self.tool_requires("oxc3/0.2.093", options = {
 			"forceVulkan": self.options.forceVulkan,
 			"enableSIMD": self.options.enableSIMD,
 			"enableTests": False,
@@ -82,7 +84,7 @@ class rt_core(ConanFile):
 		})
 
 	def requirements(self):
-		self.requires("oxc3/0.2.082", options = {
+		self.requires("oxc3/0.2.093", options = {
 			"forceVulkan": self.options.forceVulkan,
 			"enableSIMD": self.options.enableSIMD,
 			"enableTests": False,

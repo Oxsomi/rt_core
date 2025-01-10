@@ -39,6 +39,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 set(EnableSIMD ON CACHE BOOL "Enables SIMD")
 set(ForceVulkan OFF CACHE BOOL "Force Vulkan support (disable native API if available)")
+set(DynamicLinkingGraphics OFF CACHE BOOL "Turn on/off OxC3 graphics dynamic linking")
 
 if(EnableSIMD)
 	message("-- Enabling SIMD (-DEnableSIMD=ON)")
@@ -70,10 +71,16 @@ if(MSVC)
 
 	add_compile_options(/fp:strict)
 
+	# add_compile_options(/fsanitize=address)
+
 else()
 
 	if(ARM)
-		add_compile_options(-mfpu=neon -march=armv8-a+crc+simd+crypto)		# We enable neon, but we don't use it in vectors yet
+		if(EnableSIMD)
+			add_compile_options(-march=armv8-a+crc+simd+crypto)
+		else()
+			add_compile_options(-march=armv8-a+simd)
+		endif()
 	else()
 		if(EnableSIMD)
 			add_compile_options(-mfpmath=sse -msse -msse2 -msse3 -mssse3 -msse4 -msse4.1 -msse4.2 -mrdrnd -msha -maes -mbmi2 -mf16c)
@@ -90,6 +97,13 @@ else()
 		add_compile_options(-fno-fat-lto-objects)
 	endif()
 
+	# add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+	# add_link_options(-fsanitize=address -fno-omit-frame-pointer)
+	# add_compile_options(-fsanitize=undefined)
+	# add_link_options(-fsanitize=undefined)
+	# add_compile_options(-fsanitize=thread)
+	# add_link_options(-fsanitize=thread)
+
 endif()
 
 find_package(oxc3 REQUIRED)
@@ -104,24 +118,38 @@ add_executable(
 	CMakeLists.txt
 )
 
+if(DynamicLinkingGraphics)
+	target_compile_definitions(rt_core PUBLIC -DGRAPHICS_API_DYNAMIC)
+endif()
+
 target_compile_definitions(rt_core PUBLIC -D_ENABLE_SIMD=${SIMD})
 
 target_link_libraries(rt_core PUBLIC oxc3::oxc3)
 set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/test)
+
+if(DynamicLinkingGraphics AND WIN32)
+	set(shaderBinaryType "dxil,spv")
+else()
+	if(WIN32 AND NOT ForceVulkan)
+		set(shaderBinaryType "dxil")
+	else()
+		set(shaderBinaryType "spv")
+	endif()
+endif()
 
 if(WIN32)
 	add_virtual_files(
 		TARGET rt_core NAME shaders
 		ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
 		SELF ${CMAKE_CURRENT_SOURCE_DIR}
-		ARGS -threads "100%%"
+		ARGS -threads "100%%" -compile-output ${shaderBinaryType}
 	)
 else()
 	add_virtual_files(
 		TARGET rt_core NAME shaders
 		ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
 		SELF ${CMAKE_CURRENT_SOURCE_DIR}
-		ARGS -threads "100%"
+		ARGS -threads "100%" -compile-output ${shaderBinaryType}
 	)
 endif()
 
