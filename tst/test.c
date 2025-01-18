@@ -288,6 +288,8 @@ void onManagerUpdate(WindowManager *windowManager, F64 dt) {
 void onDraw(Window *w) { (void)w; }
 
 void onManagerDraw(WindowManager *windowManager) {
+	
+	Log_debugLnx("-- On draw");
 
 	TestWindowManager *twm = (TestWindowManager*) windowManager->extendedData.ptr;
 	++twm->framesSinceLastSecond;
@@ -399,6 +401,8 @@ clean:
 }
 
 void onResize(Window *w) {
+	
+	Log_debugLnx("-- On resize");
 
 	TestWindowManager *twm = (TestWindowManager*) w->owner->extendedData.ptr;
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
@@ -678,28 +682,8 @@ typedef struct VertexDataBuffer {
 
 Bool renderVirtual = false;		//Whether there's a physical swapchain
 
-void nextDoubles(F64 res[3]) {
-
-	U64 rng[3] = { 0 };
-	Buffer buf = Buffer_createRef(rng, sizeof(rng));
-
-	if(!Buffer_csprng(buf))
-		Log_errorLnx("nextDoubles: Buffer_csprng failed");
-
-	for(U8 i = 0; i < 3; ++i) {
-
-		U64 rngi = rng[i];
-		U64 sign = rngi & ((U64)1 << 63);
-		U64 mantissa = rngi & (((U64)1 << 52) - 1);
-		U64 exponent = (((rngi >> 52) & 0x1F) + ((1 << 10) - 1) - 5);
-
-		U64 doub = sign | mantissa | (exponent << 52);
-		res[i] = *(const F64*)&doub;
-	}
-}
-
 void onManagerCreate(WindowManager *manager) {
-
+	
 	Error err = Error_none(), *e_rr = &err;
 	Bool s_uccess = true;
 
@@ -722,10 +706,11 @@ void onManagerCreate(WindowManager *manager) {
 
 	GraphicsDeviceCapabilities requiredCapabilities = (GraphicsDeviceCapabilities) { 0 };
 	GraphicsDeviceInfo deviceInfo = (GraphicsDeviceInfo) { 0 };
-
+	
 	gotoIfError3(clean, GraphicsInterface_create(e_rr))
+	
 	gotoIfError2(clean, GraphicsInstance_create(applicationInfo, EGraphicsApi_Direct3D12, EGraphicsInstanceFlags_DisableDebug, &twm->instance))
-
+	
 	gotoIfError2(clean, GraphicsInstance_getPreferredDevice(
 		GraphicsInstanceRef_ptr(twm->instance),
 		requiredCapabilities,
@@ -735,7 +720,7 @@ void onManagerCreate(WindowManager *manager) {
 		GraphicsInstance_deviceTypeAll,
 		&deviceInfo
 	))
-
+	
 	GraphicsDeviceInfo_print(GraphicsInstanceRef_ptr(twm->instance)->api, &deviceInfo, true);
 
 	gotoIfError2(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, EGraphicsDeviceFlags_DisableDebug, &twm->device))
@@ -790,30 +775,40 @@ void onManagerCreate(WindowManager *manager) {
 
 		//DDS crabbage
 
-		path = CharString_createRefCStrConst("//rt_core/images/crabbage_mips.dds");
-		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
+		if(GraphicsDeviceRef_ptr(twm->device)->info.capabilities.dataTypes & EGraphicsDataTypes_BCn) {
 
-		DDSInfo ddsInfo;
-		gotoIfError2(clean, DDS_readx(tempBuffers[0], &ddsInfo, &subResource))
+			path = CharString_createRefCStrConst("//rt_core/images/crabbage_mips.dds");
+			gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 
-		path = CharString_createRefCStrConst("test_crabbage_mips.dds");
-		gotoIfError2(clean, DDS_writex(subResource, ddsInfo, &tempBuffers[1]))
-		gotoIfError3(clean, File_writex(tempBuffers[1], path, 0, 0, U64_MAX, false, e_rr))
-		Buffer_freex(&tempBuffers[1]);
+			DDSInfo ddsInfo;
+			gotoIfError2(clean, DDS_readx(tempBuffers[0], &ddsInfo, &subResource))
 
-		gotoIfError2(clean, GraphicsDeviceRef_createTexture(
-			twm->device,
-			ddsInfo.type,
-			ddsInfo.textureFormatId,
-			EGraphicsResourceFlag_ShaderRead,
-			(U16)ddsInfo.w, (U16)ddsInfo.h, (U16)ddsInfo.l,
-			CharString_createRefCStrConst("Crabbage_mips.dds"),
-			&subResource.ptrNonConst[0].data,
-			&twm->crabbageCompressed
-		))
+			path = CharString_createRefCStrConst("test_crabbage_mips.dds");
+			gotoIfError2(clean, DDS_writex(subResource, ddsInfo, &tempBuffers[1]))
+			gotoIfError3(clean, File_writex(tempBuffers[1], path, 0, 0, U64_MAX, false, e_rr))
+			Buffer_freex(&tempBuffers[1]);
 
-		ListSubResourceData_freeAllx(&subResource);
-		Buffer_freex(&tempBuffers[0]);
+			gotoIfError2(clean, GraphicsDeviceRef_createTexture(
+				twm->device,
+				ddsInfo.type,
+				ddsInfo.textureFormatId,
+				EGraphicsResourceFlag_ShaderRead,
+				(U16)ddsInfo.w, (U16)ddsInfo.h, (U16)ddsInfo.l,
+				CharString_createRefCStrConst("Crabbage_mips.dds"),
+				&subResource.ptrNonConst[0].data,
+				&twm->crabbageCompressed
+			))
+
+			ListSubResourceData_freeAllx(&subResource);
+			Buffer_freex(&tempBuffers[0]);
+		}
+
+		//Oops, DDS (at least BCn compression) is unsupported, let's just pretend our existing crabbage is the big crabbage
+
+		else {
+			gotoIfError2(clean, DeviceTextureRef_inc(twm->crabbage2049x))
+			twm->crabbageCompressed = twm->crabbage2049x;
+		}
 	}
 
 	//Create pipelines
@@ -825,6 +820,7 @@ void onManagerCreate(WindowManager *manager) {
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+		SHFile_printx(tmpBinaries[0]);
 
 		U32 main = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
@@ -835,6 +831,7 @@ void onManagerCreate(WindowManager *manager) {
 			ESHExtension_None
 		);
 
+		Log_debugLnx("Creating: indirect_prepare.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
 			twm->device,
 			tmpBinaries[0],
@@ -852,6 +849,7 @@ void onManagerCreate(WindowManager *manager) {
 		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+		SHFile_printx(tmpBinaries[0]);
 
 		main = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
@@ -862,6 +860,7 @@ void onManagerCreate(WindowManager *manager) {
 			ESHExtension_None
 		);
 
+		Log_debugLnx("Creating: indirect_compute.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
 			twm->device,
 			tmpBinaries[0],
@@ -881,6 +880,7 @@ void onManagerCreate(WindowManager *manager) {
 			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.oiSH");
 			gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 			gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+			SHFile_printx(tmpBinaries[0]);
 
 			CharString uniformsArr[2];
 			uniformsArr[0] = CharString_createRefCStrConst("X");
@@ -900,6 +900,7 @@ void onManagerCreate(WindowManager *manager) {
 				ESHExtension_None
 			);
 
+			Log_debugLnx("Creating: raytracing_test.oiSH");
 			gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
 				twm->device,
 				tmpBinaries[0],
@@ -920,10 +921,12 @@ void onManagerCreate(WindowManager *manager) {
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+		SHFile_printx(tmpBinaries[0]);
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/depth_test.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[1], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[1], false, &tmpBinaries[1], e_rr))
+		SHFile_printx(tmpBinaries[1]);
 
 		ListSHFile binaries = (ListSHFile) { 0 };
 		gotoIfError2(clean, ListSHFile_createRefConst(tmpBinaries, 2, &binaries))
@@ -989,6 +992,7 @@ void onManagerCreate(WindowManager *manager) {
 			.msaaMinSampleShading = 0.2f
 		};
 
+		Log_debugLnx("Creating: graphics_test.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineGraphics(
 			twm->device,
 			binaries,
@@ -1015,6 +1019,7 @@ void onManagerCreate(WindowManager *manager) {
 			.msaaMinSampleShading = 0.2f
 		};
 
+		Log_debugLnx("Creating: depth_test.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineGraphics(
 			twm->device,
 			binaries,
@@ -1038,6 +1043,7 @@ void onManagerCreate(WindowManager *manager) {
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
+		SHFile_printx(tmpBinaries[0]);
 
 		U32 mainMiss = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
@@ -1090,6 +1096,7 @@ void onManagerCreate(WindowManager *manager) {
 
 		gotoIfError2(clean, ListPipelineRaytracingGroup_createRefConst(hitArr, sizeof(hitArr) / sizeof(hitArr[0]), &hitGroups))
 
+		Log_debugLnx("Creating: raytracing_pipeline_test.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineRaytracingExt(
 			twm->device,
 			&stages,
@@ -1479,16 +1486,17 @@ void onManagerDestroy(WindowManager *manager) {
 
 Platform_defineEntrypoint() {
 
-	Error err = Platform_create(argc, argv, Platform_getData(), NULL, true);
+	Error err = Platform_create(Platform_argc, Platform_argv, Platform_getData(), NULL, true);
 
 	if(err.genericError) {
 		Error_printLnx(err);
-		return -2;
+		Platform_return(-2);
 	}
 
 	Error *e_rr = &err;
 	Bool s_uccess = true;
-
+	(void) s_uccess;
+	
 	WindowManagerCallbacks callbacks;
 	callbacks.onDraw = onManagerDraw;
 	callbacks.onUpdate = onManagerUpdate;
@@ -1518,7 +1526,7 @@ clean:
 	WindowManager_free(&manager);
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 	Platform_cleanup();
-	return s_uccess ? 1 : -1;
+	Platform_return(s_uccess ? 1 : -1);
 }
 
 void Program_exit() {

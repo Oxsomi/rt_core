@@ -57,6 +57,43 @@ else()
 	set(ARM OFF)
 endif()
 
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
+	message("-- Enabling ARM specific optimizations")
+	set(ARM ON)
+	set(target "arm64")
+elseif(${ANDROID_ABI} MATCHES "arm64-v8a")
+	message("-- Enabling ARM specific optimizations")
+	set(ARM ON)
+	set(target "arm64")
+else()
+	message("-- Enabling x64 specific optimizations")
+	set(ARM OFF)
+	set(target "x64")
+endif()
+
+if(WIN32)
+	set(platform windows)
+elseif(IOS)
+	set(platform ios)
+elseif(APPLE)
+	set(platform osx)
+elseif(ANDROID)
+	set(platform android)
+else()
+	set(platform linux)
+endif()
+
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}/${platform}/${target}/lib")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}/${platform}/${target}/lib")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}/${platform}/${target}/bin")
+
+foreach(config ${CMAKE_CONFIGURATION_TYPES})
+	string(TOUPPER ${config} CONFIG)
+	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${CONFIG} "${CMAKE_CURRENT_SOURCE_DIR}/build/${config}/${platform}/${target}/lib")
+	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${CONFIG} "${CMAKE_CURRENT_SOURCE_DIR}/build/${config}/${platform}/${target}/lib")
+	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${CMAKE_CURRENT_SOURCE_DIR}/build/${config}/${platform}/${target}/bin")
+endforeach()
+
 if(MSVC)
 
 	add_compile_options(/MP /GR /D_CRT_SECURE_NO_WARNINGS /Gy /W4 /WX)
@@ -111,12 +148,21 @@ find_package(oxc3 REQUIRED)
 file(GLOB_RECURSE tests "tst/*.c")
 file(GLOB_RECURSE includes "tst/*.h")
 
-add_executable(
-	rt_core
-	${tests}
-	${includes}
-	CMakeLists.txt
-)
+if(ANDROID)
+	add_library(
+		rt_core SHARED
+		${tests}
+		${includes}
+		CMakeLists.txt
+	)
+else()
+	add_executable(
+		rt_core
+		${tests}
+		${includes}
+		CMakeLists.txt
+	)
+endif()
 
 if(DynamicLinkingGraphics)
 	target_compile_definitions(rt_core PUBLIC -DGRAPHICS_API_DYNAMIC)
@@ -137,7 +183,7 @@ else()
 	endif()
 endif()
 
-if(WIN32)
+if(CMAKE_HOST_WIN32)
 	add_virtual_files(
 		TARGET rt_core NAME shaders
 		ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
