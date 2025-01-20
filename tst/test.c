@@ -178,7 +178,7 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 					EWindowHint_Default,
 					CharString_createRefCStrConst("Rt core test (duped)"),
 					TestWindow_getCallbacks(),
-					EWindowFormat_BGRA8,
+					EWindowFormat_AutoRGBA8,
 					sizeof(TestWindow),
 					&wind,
 					NULL
@@ -289,8 +289,6 @@ void onDraw(Window *w) { (void)w; }
 
 void onManagerDraw(WindowManager *windowManager) {
 	
-	Log_debugLnx("-- On draw");
-
 	TestWindowManager *twm = (TestWindowManager*) windowManager->extendedData.ptr;
 	++twm->framesSinceLastSecond;
 
@@ -402,20 +400,29 @@ clean:
 
 void onResize(Window *w) {
 	
-	Log_debugLnx("-- On resize");
-
 	TestWindowManager *twm = (TestWindowManager*) w->owner->extendedData.ptr;
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	CommandListRef *commandList = tw->commandList;
 
 	Error err = Error_none(), *e_rr = &err;
 	Bool s_uccess = true;
+	(void) s_uccess;
 
 	Bool hasSwapchain = I32x2_all(I32x2_gt(w->size, I32x2_zero()));
+	Bool hadSwapchain = !!tw->swapchain;
 
-	if(w->type != EWindowType_Virtual)
-		gotoIfError2(clean, GraphicsDeviceRef_wait(twm->device))
+	if(w->type != EWindowType_Virtual) {
+		
+		if(!tw->swapchain) {				//Init swapchain, we need to wait til resize to ensure everything is valid
+			SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w };
+			gotoIfError2(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, false, &tw->swapchain))
+		}
 
+		else gotoIfError2(clean, GraphicsDeviceRef_wait(twm->device))
+	}
+
+	ETextureFormatId format = w->format == EWindowFormat_RGBA8 ? ETextureFormatId_RGBA8 : ETextureFormatId_BGRA8;
+	
 	if(!hasSwapchain) {
 
 		gotoIfError2(cleanTemp, CommandListRef_begin(commandList, true, U64_MAX))
@@ -426,7 +433,7 @@ void onResize(Window *w) {
 		return;
 	}
 
-	if(w->type != EWindowType_Virtual)
+	if(w->type != EWindowType_Virtual && hadSwapchain)
 		gotoIfError2(clean, SwapchainRef_resize(tw->swapchain))
 
 	//Resize depth stencil and MSAA textures
@@ -444,13 +451,13 @@ void onResize(Window *w) {
 		CharString_createRefCStrConst("Test depth stencil"),
 		&tw->depthStencil
 	))
-
+	
 	if(tw->renderTexture)
 		RefPtr_dec(&tw->renderTexture);
 
 	gotoIfError2(clean, GraphicsDeviceRef_createRenderTexture(
 		twm->device,
-		ETextureType_2D, width, height, 1, ETextureFormatId_BGRA8, EGraphicsResourceFlag_ShaderRW,
+		ETextureType_2D, width, height, 1, format, EGraphicsResourceFlag_ShaderRW,
 		EMSAASamples_Off,
 		CharString_createRefCStrConst("Render texture"),
 		&tw->renderTexture
@@ -638,10 +645,9 @@ void onResize(Window *w) {
 	}
 
 	gotoIfError2(clean, CommandListRef_end(commandList))
-
+	
 clean:
-	if(!s_uccess)
-		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
+	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
 
 void onCreate(Window *w) {
@@ -654,17 +660,13 @@ void onCreate(Window *w) {
 
 	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, 2 * KIBI, 64, 64, true, &tw->commandList))
 
-	if(w->type != EWindowType_Virtual) {
-		SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w };
-		gotoIfError2(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, false, &tw->swapchain))
-	}
-
 clean:
 	if(!s_uccess)
 		Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
 
 void onDestroy(Window *w) {
+	Log_debugLnx("On destroy");
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	RefPtr_dec(&tw->swapchain);
 	DepthStencilRef_dec(&tw->depthStencil);
@@ -709,7 +711,7 @@ void onManagerCreate(WindowManager *manager) {
 	
 	gotoIfError3(clean, GraphicsInterface_create(e_rr))
 	
-	gotoIfError2(clean, GraphicsInstance_create(applicationInfo, EGraphicsApi_Direct3D12, EGraphicsInstanceFlags_DisableDebug, &twm->instance))
+	gotoIfError2(clean, GraphicsInstance_create(applicationInfo, EGraphicsApi_Vulkan, EGraphicsInstanceFlags_DisableDebug, &twm->instance))
 	
 	gotoIfError2(clean, GraphicsInstance_getPreferredDevice(
 		GraphicsInstanceRef_ptr(twm->instance),
@@ -820,7 +822,6 @@ void onManagerCreate(WindowManager *manager) {
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/indirect_prepare.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
-		SHFile_printx(tmpBinaries[0]);
 
 		U32 main = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
@@ -831,7 +832,6 @@ void onManagerCreate(WindowManager *manager) {
 			ESHExtension_None
 		);
 
-		Log_debugLnx("Creating: indirect_prepare.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
 			twm->device,
 			tmpBinaries[0],
@@ -849,7 +849,6 @@ void onManagerCreate(WindowManager *manager) {
 		path = CharString_createRefCStrConst("//rt_core/shaders/indirect_compute.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
-		SHFile_printx(tmpBinaries[0]);
 
 		main = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
@@ -860,7 +859,6 @@ void onManagerCreate(WindowManager *manager) {
 			ESHExtension_None
 		);
 
-		Log_debugLnx("Creating: indirect_compute.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
 			twm->device,
 			tmpBinaries[0],
@@ -880,7 +878,6 @@ void onManagerCreate(WindowManager *manager) {
 			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.oiSH");
 			gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 			gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
-			SHFile_printx(tmpBinaries[0]);
 
 			CharString uniformsArr[2];
 			uniformsArr[0] = CharString_createRefCStrConst("X");
@@ -900,7 +897,6 @@ void onManagerCreate(WindowManager *manager) {
 				ESHExtension_None
 			);
 
-			Log_debugLnx("Creating: raytracing_test.oiSH");
 			gotoIfError3(clean, GraphicsDeviceRef_createPipelineCompute(
 				twm->device,
 				tmpBinaries[0],
@@ -921,12 +917,10 @@ void onManagerCreate(WindowManager *manager) {
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
-		SHFile_printx(tmpBinaries[0]);
 
 		path = CharString_createRefCStrConst("//rt_core/shaders/depth_test.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[1], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[1], false, &tmpBinaries[1], e_rr))
-		SHFile_printx(tmpBinaries[1]);
 
 		ListSHFile binaries = (ListSHFile) { 0 };
 		gotoIfError2(clean, ListSHFile_createRefConst(tmpBinaries, 2, &binaries))
@@ -969,6 +963,8 @@ void onManagerCreate(WindowManager *manager) {
 
 		gotoIfError2(clean, ListPipelineStage_createRefConst(stageArr, 2, &stages))
 
+		ETextureFormatId nativeFormat = _PLATFORM_TYPE == PLATFORM_ANDROID ? ETextureFormatId_RGBA8 : ETextureFormatId_BGRA8;
+
 		PipelineGraphicsInfo info = (PipelineGraphicsInfo) {
 			.vertexLayout = {
 				.bufferStrides12_isInstance1 = { (U16) sizeof(VertexPosBuffer), (U16) sizeof(VertexDataBuffer) },
@@ -986,13 +982,12 @@ void onManagerCreate(WindowManager *manager) {
 				}
 			},
 			.attachmentCountExt = 1,
-			.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
+			.attachmentFormatsExt = { (U8) nativeFormat },
 			.depthFormatExt = EDepthStencilFormat_D16,
 			.msaa = EMSAASamples_Off,
 			.msaaMinSampleShading = 0.2f
 		};
 
-		Log_debugLnx("Creating: graphics_test.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineGraphics(
 			twm->device,
 			binaries,
@@ -1013,13 +1008,12 @@ void onManagerCreate(WindowManager *manager) {
 		info = (PipelineGraphicsInfo) {
 			.depthStencil = (DepthStencilState) { .flags = EDepthStencilFlags_DepthWrite },
 			.attachmentCountExt = 1,
-			.attachmentFormatsExt = { (U8) ETextureFormatId_BGRA8 },
+			.attachmentFormatsExt = { (U8) nativeFormat },
 			.depthFormatExt = EDepthStencilFormat_D16,
 			.msaa = EMSAASamples_Off,
 			.msaaMinSampleShading = 0.2f
 		};
 
-		Log_debugLnx("Creating: depth_test.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineGraphics(
 			twm->device,
 			binaries,
@@ -1043,7 +1037,6 @@ void onManagerCreate(WindowManager *manager) {
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 		gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
-		SHFile_printx(tmpBinaries[0]);
 
 		U32 mainMiss = GraphicsDeviceRef_getFirstShaderEntry(
 			twm->device,
@@ -1096,7 +1089,6 @@ void onManagerCreate(WindowManager *manager) {
 
 		gotoIfError2(clean, ListPipelineRaytracingGroup_createRefConst(hitArr, sizeof(hitArr) / sizeof(hitArr[0]), &hitGroups))
 
-		Log_debugLnx("Creating: raytracing_pipeline_test.oiSH");
 		gotoIfError3(clean, GraphicsDeviceRef_createPipelineRaytracingExt(
 			twm->device,
 			&stages,
@@ -1316,7 +1308,6 @@ void onManagerCreate(WindowManager *manager) {
 		&twm->indirectDispatchBuffer
 	))
 
-
 	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, KIBI, 64, 64, true, &twm->asCommandList))
 	CommandListRef *commandList = twm->asCommandList;
 
@@ -1514,7 +1505,7 @@ Platform_defineEntrypoint() {
 		EWindowHint_Default,
 		CharString_createRefCStrConst("Rt core test"),
 		TestWindow_getCallbacks(),
-		EWindowFormat_BGRA8,
+		EWindowFormat_AutoRGBA8,
 		sizeof(TestWindow),
 		&wind,
 		e_rr
