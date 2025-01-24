@@ -40,6 +40,7 @@ conan create core3/packages/amd_ags -s build_type=Release --build=missing
 conan create core3/packages/spirv_reflect -s build_type=Release --build=missing
 conan create core3/packages/dxc -s build_type=Release --build=missing
 conan create core3/packages/agility_sdk -s build_type=Release --build=missing
+conan create core3/packages/openal_soft -s build_type=Release --build=missing
 
 echo -- Building core3 for packaging
 
@@ -54,6 +55,7 @@ REM Build for target
 
 conan create core3/packages/nvapi -s build_type=%1 --build=missing
 conan create core3/packages/amd_ags -s build_type=%1 --build=missing
+conan create core3/packages/openal_soft -s build_type=Debug --build=missing
 
 if "%3" == "False" (
 	conan create core3/packages/agility_sdk -s build_type=%1 --build=missing
