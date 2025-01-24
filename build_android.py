@@ -27,7 +27,7 @@ def main():
 
 	parser.add_argument("-mode", type=str, default="Release", choices=["Release", "Debug", "RelWithDebInfo", "MinSizeRel"], help="Build mode")
 	parser.add_argument("-arch", type=str, default="all", choices=["arm64", "x64", "all"], help="Architecture")
-	parser.add_argument("-api", type=int, default=33, help="Android api level (e.g. 33 = Android 13)")
+	parser.add_argument("-api", type=int, default=29, help="Android api level (e.g. 29 = Android 10)")
 	parser.add_argument("-generator", type=str, help="CMake Generator")
 	
 	parser.add_argument("-keystore", type=str, help="Keystore location", default=None)
@@ -84,9 +84,9 @@ def main():
 			else:
 				archName = "armv8"
 
-			profile = "android_" + archName + "_" + str(args.api) + "_" + args.generator
+			profile = "android_" + archName + "_" + str(args.api) + "_" + args.generator.replace(" ", "_")
 			outputFolder = "\"build/" + args.mode + "/android/" + arch + "\""
-			subprocess.check_output("conan build . -of " + outputFolder + " -o enableSIMD=False -o dynamicLinkingGraphics=False -s build_type=" + args.mode + " --profile \"" + profile + "\" --build=missing")
+			subprocess.check_output("conan build . -of " + outputFolder + " -o enableSIMD=False -o dynamicLinkingGraphics=False -s build_type=" + args.mode + " --profile=" + profile + " --build=missing")
 
 	if not args.no_apk:
 		subprocess.check_output("python3 core3/build_android.py --skip_build -mode " + args.mode + " -arch " + args.arch + " -package net.osomi.rt_core -lib rt_core -name \"Test app\" -version 0.1.0 --apk -api " + str(args.api) + (" --sign" if args.sign else "") + (" --run" if args.run else "") + (" -keystore " + args.keystore if args.keystore else "") + (" -keystore_password " + args.keystore_password if args.keystore_password else ""))

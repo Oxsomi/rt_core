@@ -135,7 +135,7 @@ WindowCallbacks TestWindow_getCallbacks() {
 
 //Functions
 
-static const F32 timeStep = 10000;
+static const F32 timeStep = 1;
 
 void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
