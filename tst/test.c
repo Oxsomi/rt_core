@@ -476,6 +476,13 @@ void onResize(Window *w) {
 			EScopes_Copy
 		};
 
+		CharString names[] = {
+			CharString_createRefCStrConst("RaytracingTest"),
+			CharString_createRefCStrConst("RaytracingPipelineTest"),
+			CharString_createRefCStrConst("GraphicsTest"),
+			CharString_createRefCStrConst("Copy")
+		};
+
 		Transition transitions[5] = { 0 };
 		CommandScopeDependency deps[3] = { 0 };
 
@@ -513,8 +520,10 @@ void onResize(Window *w) {
 			transitionArr.length = 3;
 
 			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
+				gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 0, 1), names[0]))
 				gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, twm->inlineRaytracingTest))
 				gotoIfError2(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 7) >> 3))
+				gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
 				gotoIfError2(clean, CommandListRef_endScope(commandList))
 			}
 
@@ -541,8 +550,10 @@ void onResize(Window *w) {
 			transitionArr.length = 3;
 
 			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingPipelineTest, depsArr).genericError) {
+				gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 1, 0, 1), names[1]))
 				gotoIfError2(clean, CommandListRef_setRaytracingPipeline(commandList, twm->raytracingPipelineTest))
 				gotoIfError2(clean, CommandListRef_dispatch2DRaysExt(commandList, 0, width, height))
+				gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
 				gotoIfError2(clean, CommandListRef_endScope(commandList))
 			}
 		}
@@ -577,6 +588,8 @@ void onResize(Window *w) {
 		transitionArr.length = 5;
 
 		if(disable && !CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
+
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 0, 1, 1), names[2]))
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
 				.image = tw->renderTexture,
@@ -624,6 +637,7 @@ void onResize(Window *w) {
 			gotoIfError2(clean, CommandListRef_drawUnindexed(commandList, 36, 64))		//Draw cubes
 
 			gotoIfError2(clean, CommandListRef_endRenderExt(commandList))
+			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
 			gotoIfError2(clean, CommandListRef_endScope(commandList))
 		}
 
@@ -636,10 +650,13 @@ void onResize(Window *w) {
 
 		if(disable && !CommandListRef_startScope(commandList, transitionArr, EScopes_Copy, depsArr).genericError) {
 
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 1, 1), names[3]))
+
 			gotoIfError2(clean, CommandListRef_copyImage(
 				commandList, tw->renderTexture, tw->swapchain, ECopyType_All, (CopyImageRegion) { 0 }
 			))
 
+			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
 			gotoIfError2(clean, CommandListRef_endScope(commandList))
 		}
 	}
@@ -711,7 +728,12 @@ void onManagerCreate(WindowManager *manager) {
 	
 	gotoIfError3(clean, GraphicsInterface_create(e_rr))
 	
-	gotoIfError2(clean, GraphicsInstance_create(applicationInfo, EGraphicsApi_Vulkan, EGraphicsInstanceFlags_DisableDebug, &twm->instance))
+	gotoIfError2(clean, GraphicsInstance_create(
+		applicationInfo,
+		EGraphicsApi_Direct3D12,
+		EGraphicsInstanceFlags_None,
+		&twm->instance
+	))
 	
 	gotoIfError2(clean, GraphicsInstance_getPreferredDevice(
 		GraphicsInstanceRef_ptr(twm->instance),
@@ -725,7 +747,13 @@ void onManagerCreate(WindowManager *manager) {
 	
 	GraphicsDeviceInfo_print(GraphicsInstanceRef_ptr(twm->instance)->api, &deviceInfo, true);
 
-	gotoIfError2(clean, GraphicsDeviceRef_create(twm->instance, &deviceInfo, EGraphicsDeviceFlags_DisableDebug, &twm->device))
+	gotoIfError2(clean, GraphicsDeviceRef_create(
+		twm->instance,
+		&deviceInfo,
+		EGraphicsDeviceFlags_None,
+		EGraphicsBufferingMode_Default,
+		&twm->device
+	))
 
 	twm->enableRt = deviceInfo.capabilities.features & (EGraphicsFeatures_RayQuery | EGraphicsFeatures_RayPipeline);
 

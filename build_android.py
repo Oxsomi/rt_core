@@ -55,6 +55,8 @@ def main():
 		subprocess.check_output("conan create core3/packages/spirv_reflect -s build_type=Release --build=missing")
 		subprocess.check_output("conan create core3/packages/dxc -s build_type=Release --build=missing")
 		subprocess.check_output("conan create core3/packages/agility_sdk -s build_type=Release --build=missing")
+		subprocess.check_output("conan create core3/packages/openal_soft -s build_type=Release --build=missing")
+
 
 		print("-- Building core3 for packaging")
 
