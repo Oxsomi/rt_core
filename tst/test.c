@@ -385,6 +385,9 @@ void onManagerDraw(WindowManager *windowManager) {
 	if (twm->tlas)
 		data.tlasExt = TLASRef_ptr(twm->tlas)->handle;
 
+	if(GraphicsDeviceRef_ptr(twm->device)->submitId < 8)
+		Log_debugLnx("Logging first 8 frames: %"PRIu64, GraphicsDeviceRef_ptr(twm->device)->submitId);
+
 	Buffer runtimeData = Buffer_createRefConst((const U32*)&data, sizeof(data));
 	gotoIfError2(clean, GraphicsDeviceRef_submitCommands(
 		twm->device, twm->commandLists, twm->swapchains, runtimeData,
@@ -403,6 +406,8 @@ void onResize(Window *w) {
 	TestWindowManager *twm = (TestWindowManager*) w->owner->extendedData.ptr;
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	CommandListRef *commandList = tw->commandList;
+
+	Log_debugLnx("On resize start");
 
 	Error err = Error_none(), *e_rr = &err;
 	Bool s_uccess = true;
@@ -663,6 +668,8 @@ void onResize(Window *w) {
 
 	gotoIfError2(clean, CommandListRef_end(commandList))
 	
+	Log_debugLnx("On resize end");
+
 clean:
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
@@ -689,6 +696,7 @@ void onDestroy(Window *w) {
 	DepthStencilRef_dec(&tw->depthStencil);
 	RenderTextureRef_dec(&tw->renderTexture);
 	CommandListRef_dec(&tw->commandList);
+	Log_debugLnx("On destroy finished");
 }
 
 typedef struct VertexPosBuffer {
@@ -717,6 +725,8 @@ void onManagerCreate(WindowManager *manager) {
 	twm->JD = AtmosHelper_getJulianDate(twm->lastTime);
 
 	//Graphics test
+
+	Log_debugLnx("Create instance");
 
 	GraphicsApplicationInfo applicationInfo = (GraphicsApplicationInfo) {
 		.name = CharString_createRefCStrConst("Rt core test"),
@@ -747,6 +757,8 @@ void onManagerCreate(WindowManager *manager) {
 	
 	GraphicsDeviceInfo_print(GraphicsInstanceRef_ptr(twm->instance)->api, &deviceInfo, true);
 
+	Log_debugLnx("Create device");
+
 	gotoIfError2(clean, GraphicsDeviceRef_create(
 		twm->instance,
 		&deviceInfo,
@@ -755,9 +767,11 @@ void onManagerCreate(WindowManager *manager) {
 		&twm->device
 	))
 
-	twm->enableRt = deviceInfo.capabilities.features & (EGraphicsFeatures_RayQuery | EGraphicsFeatures_RayPipeline);
+	twm->enableRt = !!(deviceInfo.capabilities.features & (EGraphicsFeatures_RayQuery | EGraphicsFeatures_RayPipeline));
 
 	//Create samplers
+
+	Log_debugLnx("Create samplers");
 
 	CharString samplerNames[] = {
 		CharString_createRefCStrConst("Nearest sampler"),
@@ -776,6 +790,8 @@ void onManagerCreate(WindowManager *manager) {
 	//Load all sections in rt_core
 
 	gotoIfError3(clean, File_loadVirtual(CharString_createRefCStrConst("//rt_core"), NULL, e_rr))
+
+	Log_debugLnx("Create images");
 
 	{
 		//Normal crabbage
@@ -844,6 +860,8 @@ void onManagerCreate(WindowManager *manager) {
 	//Create pipelines
 	//Compute pipelines
 
+	Log_debugLnx("Create compute pipelines");
+
 	{
 		//Indirect prepare
 
@@ -902,7 +920,7 @@ void onManagerCreate(WindowManager *manager) {
 		//Inline raytracing test
 
 		if (twm->enableRt) {
-
+			
 			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.oiSH");
 			gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 			gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
@@ -940,6 +958,8 @@ void onManagerCreate(WindowManager *manager) {
 	}
 
 	//Graphics pipelines
+
+	Log_debugLnx("Create graphics pipelines");
 
 	{
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/graphics_test.oiSH");
@@ -1059,6 +1079,8 @@ void onManagerCreate(WindowManager *manager) {
 	}
 
 	//Raytracing pipelines
+
+	Log_debugLnx("Create raytracing pipelines");
 
 	if (twm->enableRt) {
 
@@ -1205,6 +1227,8 @@ void onManagerCreate(WindowManager *manager) {
 	EDeviceBufferUsage positionBufferAs = EDeviceBufferUsage_Vertex | asFlag;
 	EDeviceBufferUsage indexBufferAs = EDeviceBufferUsage_Index | asFlag;
 
+	Log_debugLnx("Create buffers");
+
 	Buffer vertexData = Buffer_createRefConst(vertexPos, sizeof(vertexPos));
 	CharString name = CharString_createRefCStrConst("Vertex position buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
@@ -1224,6 +1248,8 @@ void onManagerCreate(WindowManager *manager) {
 	))
 
 	//Build BLASes & TLAS (only if inline RT is available)
+	
+	Log_debugLnx("Create BLAS/TLAS");
 
 	if(twm->enableRt) {
 
@@ -1305,6 +1331,8 @@ void onManagerCreate(WindowManager *manager) {
 	}
 
 	//Other shader buffers
+	
+	Log_debugLnx("Create shader buffers");
 
 	name = CharString_createRefCStrConst("Test shader buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
@@ -1335,6 +1363,8 @@ void onManagerCreate(WindowManager *manager) {
 		sizeof(Dispatch),
 		&twm->indirectDispatchBuffer
 	))
+	
+	Log_debugLnx("Create command list");
 
 	gotoIfError2(clean, GraphicsDeviceRef_createCommandList(twm->device, KIBI, 64, 64, true, &twm->asCommandList))
 	CommandListRef *commandList = twm->asCommandList;
@@ -1443,6 +1473,8 @@ void onManagerCreate(WindowManager *manager) {
 	}
 
 	gotoIfError2(clean, CommandListRef_end(commandList))
+
+	Log_debugLnx("Init success");
 
 clean:
 

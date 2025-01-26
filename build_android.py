@@ -40,14 +40,10 @@ def main():
 	parser.add_argument("--skip_build_self", help="Run full build, if false, can be used to skip building self", action="store_true")
 
 	args = parser.parse_args()
-
-	if args.generator == None:
-		args.generator = "MinGW Makefiles" if os.name == "nt" else "Unix Makefiles"
-
 	# Build core3
 
 	if not args.skip_build_core3:
-
+		
 		# Build for host
 		
 		subprocess.check_output("conan create core3/packages/nvapi -s build_type=Release --build=missing")
@@ -55,22 +51,22 @@ def main():
 		subprocess.check_output("conan create core3/packages/spirv_reflect -s build_type=Release --build=missing")
 		subprocess.check_output("conan create core3/packages/dxc -s build_type=Release --build=missing")
 		subprocess.check_output("conan create core3/packages/agility_sdk -s build_type=Release --build=missing")
-		subprocess.check_output("conan create core3/packages/openal_soft -s build_type=Release --build=missing")
-
 
 		print("-- Building core3 for packaging")
 
 		subprocess.check_output("conan build core3 -s build_type=Release -o \"&:forceVulkan=False\" -o \"&:dynamicLinkingGraphics=True\" -o \"&:enableSIMD=False\" -o \"&:enableTests=False\" -o \"&:enableOxC3CLI=True\" -o \"&:forceFloatFallback=False\" -o \"&:enableShaderCompiler=True\" -o \"&:cliGraphics=False\" --build=missing")
 		subprocess.check_output("conan export-pkg core3 -s build_type=Release -o \"&:forceVulkan=False\" -o \"&:dynamicLinkingGraphics=True\" -o \"&:enableSIMD=False\" -o \"&:enableTests=False\" -o \"&:enableOxC3CLI=True\" -o \"&:forceFloatFallback=False\" -o \"&:enableShaderCompiler=True\" -o \"&:cliGraphics=False\"")
 
-		# Build for self
-
 		cwd = os.getcwd()
 		os.chdir("core3")
-		subprocess.check_output("python3 build_android.py -mode " + args.mode + " -arch " + args.arch + " -api " + str(args.api) + " -generator \"" + args.generator + "\" --install")
+		generator = "" if args.generator == None else " -generator \"" + args.generator + "\""
+		subprocess.check_output("python3 build_android.py -mode " + args.mode + " -arch " + args.arch + " -api " + str(args.api) + generator + " --install")
 		os.chdir(cwd)
 
 	# Build self and then turn into apk
+	
+	if args.generator == None:
+		args.generator = "MinGW Makefiles" if os.name == "nt" else "Unix Makefiles"
 
 	if not args.skip_build_self:
 
