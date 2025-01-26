@@ -407,8 +407,6 @@ void onResize(Window *w) {
 	TestWindow *tw = (TestWindow*) w->extendedData.ptr;
 	CommandListRef *commandList = tw->commandList;
 
-	Log_debugLnx("On resize start");
-
 	Error err = Error_none(), *e_rr = &err;
 	Bool s_uccess = true;
 	(void) s_uccess;
@@ -668,8 +666,6 @@ void onResize(Window *w) {
 
 	gotoIfError2(clean, CommandListRef_end(commandList))
 	
-	Log_debugLnx("On resize end");
-
 clean:
 	Error_printx(err, ELogLevel_Error, ELogOptions_Default);
 }
