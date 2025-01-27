@@ -79,7 +79,7 @@ typedef struct TestWindowManager {
 	TLASRef *tlas;									//If rt is on, contains the scene's AS
 
 	PipelineRef *prepareIndirectPipeline, *indirectCompute, *inlineRaytracingTest;
-	PipelineRef *graphicsTest, *graphicsDepthTest;
+	PipelineRef *graphicsTest, *graphicsDepthTest, *graphicsDepthTestMSAA;
 	PipelineRef *raytracingPipelineTest;
 	ListCommandListRef commandLists;
 	ListSwapchainRef swapchains;
@@ -108,8 +108,9 @@ typedef struct TestWindow {
 	F64 time;
 	CommandListRef *commandList;
 	RefPtr *swapchain;					//Can be either SwapchainRef (non virtual) or RenderTextureRef (virtual)
-	DepthStencilRef *depthStencil;
-	RenderTextureRef *renderTexture;
+
+	DepthStencilRef *depthStencil, *depthStencilMSAA;
+	RenderTextureRef *renderTexture, *renderTextureMSAA, *renderTextureMSAATarget;
 
 } TestWindow;
 
@@ -439,7 +440,7 @@ void onResize(Window *w) {
 	if(w->type != EWindowType_Virtual && hadSwapchain)
 		gotoIfError2(clean, SwapchainRef_resize(tw->swapchain))
 
-	//Resize depth stencil and MSAA textures
+	//Resize depth stencil and render textures
 
 	if(tw->depthStencil)
 		DepthStencilRef_dec(&tw->depthStencil);
@@ -466,6 +467,41 @@ void onResize(Window *w) {
 		&tw->renderTexture
 	))
 
+	//Resize MSAA targets
+
+	if(tw->depthStencilMSAA)
+		DepthStencilRef_dec(&tw->depthStencilMSAA);
+
+	gotoIfError2(clean, GraphicsDeviceRef_createDepthStencil(
+		twm->device,
+		256, 256, EDepthStencilFormat_D16, false,
+		EMSAASamples_x4,
+		CharString_createRefCStrConst("Test depth stencil MSAA 256x"),
+		&tw->depthStencilMSAA
+	))
+	
+	if(tw->renderTextureMSAA)
+		RefPtr_dec(&tw->renderTextureMSAA);
+
+	gotoIfError2(clean, GraphicsDeviceRef_createRenderTexture(
+		twm->device,
+		ETextureType_2D, 256, 256, 1, format, EGraphicsResourceFlag_None,
+		EMSAASamples_x4,
+		CharString_createRefCStrConst("Render texture MSAA"),
+		&tw->renderTextureMSAA
+	))
+	
+	if(tw->renderTextureMSAATarget)
+		RefPtr_dec(&tw->renderTextureMSAATarget);
+
+	gotoIfError2(clean, GraphicsDeviceRef_createRenderTexture(
+		twm->device,
+		ETextureType_2D, 256, 256, 1, format, EGraphicsResourceFlag_None,
+		EMSAASamples_Off,
+		CharString_createRefCStrConst("Render texture MSAA Target"),
+		&tw->renderTextureMSAATarget
+	))
+
 	//Record commands
 
 	gotoIfError2(clean, CommandListRef_begin(commandList, true, U64_MAX))
@@ -476,14 +512,22 @@ void onResize(Window *w) {
 			EScopes_RaytracingTest,
 			EScopes_RaytracingPipelineTest,
 			EScopes_GraphicsTest,
-			EScopes_Copy
+			EScopes_GraphicsTestMSAA,
+			EScopes_Copy,
+			EScopes_Copy2,
+			EScopes_Clear,
+			EScopes_Copy3
 		};
 
 		CharString names[] = {
 			CharString_createRefCStrConst("RaytracingTest"),
 			CharString_createRefCStrConst("RaytracingPipelineTest"),
 			CharString_createRefCStrConst("GraphicsTest"),
-			CharString_createRefCStrConst("Copy")
+			CharString_createRefCStrConst("Copy"),
+			CharString_createRefCStrConst("GraphicsTestMSAA"),
+			CharString_createRefCStrConst("Copy2"),
+			CharString_createRefCStrConst("Clear"),
+			CharString_createRefCStrConst("Copy3")
 		};
 
 		Transition transitions[5] = { 0 };
@@ -644,10 +688,81 @@ void onResize(Window *w) {
 			gotoIfError2(clean, CommandListRef_endScope(commandList))
 		}
 
+		//Test graphics pipeline MSAA
+
+		transitions[0] = (Transition) {
+			.resource = twm->deviceBuffer,
+			.stage = EPipelineStage_Pixel
+		};
+
+		transitions[1] = (Transition) {
+			.resource = twm->viewProjMatrices,
+			.stage = EPipelineStage_Vertex
+		};
+
+		transitions[2] = (Transition) {
+			.resource = twm->crabbageCompressed,
+			.stage = EPipelineStage_Pixel
+		};
+
+		transitions[3] = (Transition) {
+			.resource = twm->crabbage2049x,
+			.stage = EPipelineStage_Pixel
+		};
+
+		transitions[4] = (Transition) { .resource = twm->anisotropic };		//Keep sampler alive
+
+		deps[0] = (CommandScopeDependency) { .id = EScopes_RaytracingTest };
+		deps[1] = (CommandScopeDependency) { .id = EScopes_RaytracingPipelineTest };
+		depsArr.length = 2;
+		transitionArr.length = 5;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTestMSAA, depsArr).genericError) {
+
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 1, 1, 1), names[4]))
+
+			AttachmentInfo attachmentInfo = (AttachmentInfo) {
+				.image = tw->renderTextureMSAA,
+				.unusedAfterRender = true,
+				.resolveMode = EMSAAResolveMode_Average,
+				.load = ELoadAttachmentType_Clear,
+				.resolveImage = tw->renderTextureMSAATarget,
+				.color = { .colorf = { 0.25f, 0.5f, 1, 1 } }
+			};
+
+			DepthStencilAttachmentInfo depthStencil = (DepthStencilAttachmentInfo) {
+				.image = tw->depthStencilMSAA,
+				.depthUnusedAfterRender = true,
+				.depthLoad = ELoadAttachmentType_Clear,
+				.clearDepth = 0
+			};
+
+			ListAttachmentInfo colors = (ListAttachmentInfo) { 0 };
+			gotoIfError2(clean, ListAttachmentInfo_createRefConst(&attachmentInfo, 1, &colors))
+
+			//Start render
+
+			gotoIfError2(clean, CommandListRef_startRenderExt(
+				commandList, I32x2_zero(), I32x2_zero(), colors, depthStencil
+			))
+
+			gotoIfError2(clean, CommandListRef_setViewportAndScissor(commandList, I32x2_zero(), I32x2_zero()))
+
+			//Draw with depth
+
+			gotoIfError2(clean, CommandListRef_setGraphicsPipeline(commandList, twm->graphicsDepthTestMSAA))
+
+			gotoIfError2(clean, CommandListRef_drawUnindexed(commandList, 36, 64))		//Draw cubes
+
+			gotoIfError2(clean, CommandListRef_endRenderExt(commandList))
+			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
+			gotoIfError2(clean, CommandListRef_endScope(commandList))
+		}
+
 		//Copy
 
 		deps[0] = (CommandScopeDependency) { .id = EScopes_RaytracingTest };
-		deps[1] = (CommandScopeDependency) { .id = EScopes_GraphicsTest };
+		deps[1] = (CommandScopeDependency) { .id = EScopes_RaytracingPipelineTest };
 		depsArr.length = 2;
 		transitionArr.length = 0;
 
@@ -657,6 +772,62 @@ void onResize(Window *w) {
 
 			gotoIfError2(clean, CommandListRef_copyImage(
 				commandList, tw->renderTexture, tw->swapchain, ECopyType_All, (CopyImageRegion) { 0 }
+			))
+
+			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
+			gotoIfError2(clean, CommandListRef_endScope(commandList))
+		}
+
+		//Copy2 (needs separate scope to handle write hazard)
+
+		deps[0] = (CommandScopeDependency) { .id = EScopes_GraphicsTestMSAA };
+		deps[1] = (CommandScopeDependency) { .id = EScopes_Copy };
+		depsArr.length = 2;
+		transitionArr.length = 0;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Copy2, depsArr).genericError) {
+
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 1, 1, 1), names[5]))
+
+			gotoIfError2(clean, CommandListRef_copyImage(
+				commandList, tw->renderTextureMSAATarget, tw->swapchain, ECopyType_All, (CopyImageRegion) { 0 }
+			))
+
+			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
+			gotoIfError2(clean, CommandListRef_endScope(commandList))
+		}
+
+		//Clear target
+
+		deps[0] = (CommandScopeDependency) { .id = EScopes_Copy2 };
+		depsArr.length = 1;
+		transitionArr.length = 0;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Clear, depsArr).genericError) {
+
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 0, 0, 1), names[6]))
+
+			gotoIfError2(clean, CommandListRef_clearImagef(
+				commandList, F32x4_create4(0, 1, 0, 1), (ImageRange) { 0 }, tw->renderTextureMSAATarget
+			))
+
+			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
+			gotoIfError2(clean, CommandListRef_endScope(commandList))
+		}
+
+		//Copy3 (needs separate scope to handle write hazard)
+
+		deps[0] = (CommandScopeDependency) { .id = EScopes_Clear };
+		depsArr.length = 1;
+		transitionArr.length = 0;
+
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Copy3, depsArr).genericError) {
+
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0.5, 0.5, 0.5, 1), names[7]))
+			
+			gotoIfError2(clean, CommandListRef_copyImage(
+				commandList, tw->renderTextureMSAATarget, tw->swapchain, ECopyType_All,
+				(CopyImageRegion) { .dstX = 256, .dstY = 256 }
 			))
 
 			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
@@ -691,6 +862,9 @@ void onDestroy(Window *w) {
 	RefPtr_dec(&tw->swapchain);
 	DepthStencilRef_dec(&tw->depthStencil);
 	RenderTextureRef_dec(&tw->renderTexture);
+	DepthStencilRef_dec(&tw->depthStencilMSAA);
+	RenderTextureRef_dec(&tw->renderTextureMSAA);
+	RenderTextureRef_dec(&tw->renderTextureMSAATarget);
 	CommandListRef_dec(&tw->commandList);
 	Log_debugLnx("On destroy finished");
 }
@@ -1065,6 +1239,27 @@ void onManagerCreate(WindowManager *manager) {
 			info,
 			CharString_createRefCStrConst("Test graphics depth pipeline"),
 			&twm->graphicsDepthTest,
+			e_rr
+		))
+
+		gotoIfError2(clean, ListPipelineStage_createRefConst(stageArr, 2, &stages))
+
+		info = (PipelineGraphicsInfo) {
+			.depthStencil = (DepthStencilState) { .flags = EDepthStencilFlags_DepthWrite },
+			.attachmentCountExt = 1,
+			.attachmentFormatsExt = { (U8) nativeFormat },
+			.depthFormatExt = EDepthStencilFormat_D16,
+			.msaa = EMSAASamples_x4,
+			.msaaMinSampleShading = 0.2f
+		};
+
+		gotoIfError3(clean, GraphicsDeviceRef_createPipelineGraphics(
+			twm->device,
+			binaries,
+			&stages,
+			info,
+			CharString_createRefCStrConst("Test graphics depth pipeline MSAA"),
+			&twm->graphicsDepthTestMSAA,
 			e_rr
 		))
 
@@ -1506,6 +1701,7 @@ void onManagerDestroy(WindowManager *manager) {
 
 	PipelineRef_dec(&twm->graphicsTest);
 	PipelineRef_dec(&twm->graphicsDepthTest);
+	PipelineRef_dec(&twm->graphicsDepthTestMSAA);
 	PipelineRef_dec(&twm->prepareIndirectPipeline);
 	PipelineRef_dec(&twm->indirectCompute);
 	PipelineRef_dec(&twm->inlineRaytracingTest);
