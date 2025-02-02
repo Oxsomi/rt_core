@@ -117,9 +117,11 @@ typedef struct TestWindow {
 void onDraw(Window *w);
 void onUpdate(Window *w, F64 dt);
 void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown);
+void onAxis(Window *w, InputDevice *device, InputHandle handle, F32 axis);
 void onResize(Window *w);
 void onCreate(Window *w);
 void onDestroy(Window *w);
+void onCursorMove(Window *w);
 void onTypeChar(Window *w, CharString str);
 
 WindowCallbacks TestWindow_getCallbacks() {
@@ -128,6 +130,8 @@ WindowCallbacks TestWindow_getCallbacks() {
 	callbacks.onUpdate = onUpdate;
 	callbacks.onTypeChar = onTypeChar;
 	callbacks.onDeviceButton = onButton;
+	callbacks.onDeviceAxis = onAxis;
+	callbacks.onCursorMove = onCursorMove;
 	callbacks.onResize = onResize;
 	callbacks.onCreate = onCreate;
 	callbacks.onDestroy = onDestroy;
@@ -138,20 +142,40 @@ WindowCallbacks TestWindow_getCallbacks() {
 
 static const F32 timeStep = 1;
 
-void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
+void onCursorMove(Window *w) {
+	(void) w;
+	//Log_debugLnx("Cursor move to %i,%i", I32x2_x(w->cursor), I32x2_y(w->cursor));
+}
 
-	if(device->type != EInputDeviceType_Keyboard)
-		return;
+static Bool isVisible = false;
+
+void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 
 	TestWindowManager *twm = (TestWindowManager*)w->owner->extendedData.ptr;
 
+	if(device->type != EInputDeviceType_Keyboard) {
+
+		Log_debugLnx(
+			"Button %s: %s",
+			isDown ? "press" : "release",
+			InputDevice_getButton(*device, InputDevice_getLocalHandle(*device, handle))->name
+		);
+
+		return;
+	}
+
+	CharString str = Keyboard_remap(device, (EKey) handle);
+	Log_debugLnx("Key %s: %s", isDown ? "press" : "release", str.ptr);
+	CharString_freex(&str);
+
 	if(isDown) {
 
-		CharString str = Keyboard_remap((EKey) handle);
-		Log_debugLnx("Key press: %s\n", str.ptr);
-		CharString_freex(&str);
-
 		switch ((EKey) handle) {
+
+			case EKey_F2:
+				isVisible = !isVisible;
+				Platform_setKeyboardVisible(isVisible);
+				break;
 
 			//F9 we pause
 
@@ -192,6 +216,15 @@ void onButton(Window *w, InputDevice *device, InputHandle handle, Bool isDown) {
 				break;
 		}
 	}
+}
+
+void onAxis(Window *w, InputDevice *device, InputHandle handle, F32 axis) {
+	(void) w; (void) device; (void) handle; (void) axis;
+	/*Log_debugLnx(
+		"Axis update: %s to %f",
+		InputDevice_getAxis(*device, InputDevice_getLocalHandle(*device, handle))->name,
+		axis
+	);*/
 }
 
 void onTypeChar(Window *w, CharString str) {
