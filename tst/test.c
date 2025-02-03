@@ -473,13 +473,28 @@ void onResize(Window *w) {
 	if(w->type != EWindowType_Virtual && hadSwapchain)
 		gotoIfError2(clean, SwapchainRef_resize(tw->swapchain))
 
+	//Check if we need to resize our textures.
+	//It's possible we don't, in case our device is rotated for example, we might still receive onResize.
+	//But in that case, only the swapchain has to be recreated, not the render textures.
+
+	U16 width = (U16) I32x2_x(w->size);
+	U16 height = (U16) I32x2_y(w->size);
+
+	Bool recreate = !tw->depthStencil;
+
+	if(tw->depthStencil) {
+		DepthStencil *ds = DepthStencilRef_ptr(tw->depthStencil);
+		recreate = ds->width != width || ds->height != height;
+		Log_debugLnx("Recreate: %"PRIu16"x%"PRIu16" vs %"PRIu16"x%"PRIu16, ds->width, ds->height, width, height);
+	}
+
+	if(!recreate)		//Skip everything, including re-recording commands
+		goto clean;
+
 	//Resize depth stencil and render textures
 
 	if(tw->depthStencil)
 		DepthStencilRef_dec(&tw->depthStencil);
-
-	U16 width = (U16) I32x2_x(w->size);
-	U16 height = (U16) I32x2_y(w->size);
 
 	gotoIfError2(clean, GraphicsDeviceRef_createDepthStencil(
 		twm->device,
@@ -502,38 +517,32 @@ void onResize(Window *w) {
 
 	//Resize MSAA targets
 
-	if(tw->depthStencilMSAA)
-		DepthStencilRef_dec(&tw->depthStencilMSAA);
-
-	gotoIfError2(clean, GraphicsDeviceRef_createDepthStencil(
-		twm->device,
-		256, 256, EDepthStencilFormat_D16, false,
-		EMSAASamples_x4,
-		CharString_createRefCStrConst("Test depth stencil MSAA 256x"),
-		&tw->depthStencilMSAA
-	))
+	if(!tw->depthStencilMSAA)
+		gotoIfError2(clean, GraphicsDeviceRef_createDepthStencil(
+			twm->device,
+			256, 256, EDepthStencilFormat_D16, false,
+			EMSAASamples_x4,
+			CharString_createRefCStrConst("Test depth stencil MSAA 256x"),
+			&tw->depthStencilMSAA
+		))
 	
-	if(tw->renderTextureMSAA)
-		RefPtr_dec(&tw->renderTextureMSAA);
-
-	gotoIfError2(clean, GraphicsDeviceRef_createRenderTexture(
-		twm->device,
-		ETextureType_2D, 256, 256, 1, format, EGraphicsResourceFlag_None,
-		EMSAASamples_x4,
-		CharString_createRefCStrConst("Render texture MSAA"),
-		&tw->renderTextureMSAA
-	))
+	if(!tw->renderTextureMSAA)
+		gotoIfError2(clean, GraphicsDeviceRef_createRenderTexture(
+			twm->device,
+			ETextureType_2D, 256, 256, 1, format, EGraphicsResourceFlag_None,
+			EMSAASamples_x4,
+			CharString_createRefCStrConst("Render texture MSAA"),
+			&tw->renderTextureMSAA
+		))
 	
-	if(tw->renderTextureMSAATarget)
-		RefPtr_dec(&tw->renderTextureMSAATarget);
-
-	gotoIfError2(clean, GraphicsDeviceRef_createRenderTexture(
-		twm->device,
-		ETextureType_2D, 256, 256, 1, format, EGraphicsResourceFlag_None,
-		EMSAASamples_Off,
-		CharString_createRefCStrConst("Render texture MSAA Target"),
-		&tw->renderTextureMSAATarget
-	))
+	if(!tw->renderTextureMSAATarget)
+		gotoIfError2(clean, GraphicsDeviceRef_createRenderTexture(
+			twm->device,
+			ETextureType_2D, 256, 256, 1, format, EGraphicsResourceFlag_None,
+			EMSAASamples_Off,
+			CharString_createRefCStrConst("Render texture MSAA Target"),
+			&tw->renderTextureMSAATarget
+		))
 
 	//Record commands
 
