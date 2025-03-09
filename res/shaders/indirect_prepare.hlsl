@@ -48,7 +48,11 @@ void main(U32 i : SV_DispatchThreadID) {
 			}
 		}
 
+		U32 orientation = getAppData1u(EResourceBinding_Orientation);
+
 		F32x4x4 v = F32x4x4_lookAt(camPos, 0.xxx, F32x3(0, 1, 0));
+		v = mul(v, F32x4x4_rotateZ(orientation * F32_degToRad));
+
 		F32x4x4 p = F32x4x4_perspective(120 * F32_degToRad, aspect, 0.1, 100);
 
 		ViewProjMatrices vp;

@@ -342,6 +342,7 @@ void onManagerDraw(WindowManager *windowManager) {
 	gotoIfError2(clean, ListCommandListRef_pushBackx(&twm->commandLists, twm->prepCommandList))
 
 	RenderTextureRef *renderTex = NULL;
+	U32 orientation = 0;
 
 	for(U64 handle = 0; handle < windowManager->windows.length; ++handle) {
 
@@ -359,8 +360,10 @@ void onManagerDraw(WindowManager *windowManager) {
 
 			gotoIfError2(clean, ListCommandListRef_pushBackx(&twm->commandLists, cmd))
 
-			if (swap->typeId == (ETypeId) EGraphicsTypeId_Swapchain)
+			if (swap->typeId == (ETypeId) EGraphicsTypeId_Swapchain) {
 				gotoIfError2(clean, ListSwapchainRef_pushBackx(&twm->swapchains, swap))
+				orientation = SwapchainRef_ptr(swap)->orientation;
+			}
 		}
 	}
 
@@ -380,7 +383,7 @@ void onManagerDraw(WindowManager *windowManager) {
 		U32 sampler;
 		U32 tlasExt;
 		U32 renderTargetWrite;
-		U32 padding0;
+		U32 orientation;
 
 		F32 skyDir[3];
 		U32 padding1;
@@ -411,6 +414,7 @@ void onManagerDraw(WindowManager *windowManager) {
 
 		.sampler = SamplerRef_ptr(twm->anisotropic)->samplerLocation,
 		.renderTargetWrite = TextureRef_getCurrWriteHandle(renderTex, 0),
+		.orientation = orientation,
 
 		.skyDir = { F32x4_x(skyDir), F32x4_y(skyDir), F32x4_z(skyDir) },
 		.camPos = { F32x4_x(camPos), F32x4_y(camPos), F32x4_z(camPos) }
@@ -452,7 +456,7 @@ void onResize(Window *w) {
 		
 		if(!tw->swapchain) {				//Init swapchain, we need to wait til resize to ensure everything is valid
 			SwapchainInfo swapchainInfo = (SwapchainInfo) { .window = w };
-			gotoIfError2(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, false, &tw->swapchain))
+			gotoIfError2(clean, GraphicsDeviceRef_createSwapchain(twm->device, swapchainInfo, false, NULL, &tw->swapchain))
 		}
 
 		else gotoIfError2(clean, GraphicsDeviceRef_wait(twm->device))
@@ -489,7 +493,7 @@ void onResize(Window *w) {
 	}
 
 	if(!recreate)		//Skip everything, including re-recording commands
-		goto clean;
+		goto generateCommands;
 
 	//Resize depth stencil and render textures
 
@@ -500,6 +504,7 @@ void onResize(Window *w) {
 		twm->device,
 		width, height, EDepthStencilFormat_D16, false,
 		EMSAASamples_Off,
+		NULL,
 		CharString_createRefCStrConst("Test depth stencil"),
 		&tw->depthStencil
 	))
@@ -509,8 +514,9 @@ void onResize(Window *w) {
 
 	gotoIfError2(clean, GraphicsDeviceRef_createRenderTexture(
 		twm->device,
-		ETextureType_2D, width, height, 1, format, EGraphicsResourceFlag_ShaderRW,
+		ETextureType_2D, width, height, 1, format, EGraphicsResourceFlag_ShaderRWBindless,
 		EMSAASamples_Off,
+		NULL,
 		CharString_createRefCStrConst("Render texture"),
 		&tw->renderTexture
 	))
@@ -522,6 +528,7 @@ void onResize(Window *w) {
 			twm->device,
 			256, 256, EDepthStencilFormat_D16, false,
 			EMSAASamples_x4,
+			NULL,
 			CharString_createRefCStrConst("Test depth stencil MSAA 256x"),
 			&tw->depthStencilMSAA
 		))
@@ -531,6 +538,7 @@ void onResize(Window *w) {
 			twm->device,
 			ETextureType_2D, 256, 256, 1, format, EGraphicsResourceFlag_None,
 			EMSAASamples_x4,
+			NULL,
 			CharString_createRefCStrConst("Render texture MSAA"),
 			&tw->renderTextureMSAA
 		))
@@ -540,11 +548,14 @@ void onResize(Window *w) {
 			twm->device,
 			ETextureType_2D, 256, 256, 1, format, EGraphicsResourceFlag_None,
 			EMSAASamples_Off,
+			NULL,
 			CharString_createRefCStrConst("Render texture MSAA Target"),
 			&tw->renderTextureMSAATarget
 		))
 
 	//Record commands
+	
+generateCommands:
 
 	gotoIfError2(clean, CommandListRef_begin(commandList, true, U64_MAX))
 
@@ -813,7 +824,7 @@ void onResize(Window *w) {
 			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 1, 1), names[3]))
 
 			gotoIfError2(clean, CommandListRef_copyImage(
-				commandList, tw->renderTexture, tw->swapchain, ECopyType_All, (CopyImageRegion) { 0 }
+				commandList, tw->renderTexture, tw->swapchain, (CopyImageRegion) { 0 }
 			))
 
 			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
@@ -832,7 +843,7 @@ void onResize(Window *w) {
 			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 1, 1, 1), names[5]))
 
 			gotoIfError2(clean, CommandListRef_copyImage(
-				commandList, tw->renderTextureMSAATarget, tw->swapchain, ECopyType_All, (CopyImageRegion) { 0 }
+				commandList, tw->renderTextureMSAATarget, tw->swapchain, (CopyImageRegion) { .outputRotation = w->orientation / 90 }
 			))
 
 			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
@@ -868,8 +879,8 @@ void onResize(Window *w) {
 			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0.5, 0.5, 0.5, 1), names[7]))
 			
 			gotoIfError2(clean, CommandListRef_copyImage(
-				commandList, tw->renderTextureMSAATarget, tw->swapchain, ECopyType_All,
-				(CopyImageRegion) { .dstX = 256, .dstY = 256 }
+				commandList, tw->renderTextureMSAATarget, tw->swapchain,
+				(CopyImageRegion) { .dstX = 256, .dstY = 256, .outputRotation = w->orientation / 90 }
 			))
 
 			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
@@ -995,9 +1006,11 @@ void onManagerCreate(WindowManager *manager) {
 	SamplerInfo linearSampler = (SamplerInfo) { .filter = ESamplerFilterMode_Linear };
 	SamplerInfo anisotropicSampler = (SamplerInfo) { .filter = ESamplerFilterMode_Linear, .aniso = 16 };
 
-	gotoIfError2(clean, GraphicsDeviceRef_createSampler(twm->device, nearestSampler, samplerNames[0], &twm->nearest))
-	gotoIfError2(clean, GraphicsDeviceRef_createSampler(twm->device, linearSampler, samplerNames[1], &twm->linear))
-	gotoIfError2(clean, GraphicsDeviceRef_createSampler(twm->device, anisotropicSampler, samplerNames[2], &twm->anisotropic))
+	gotoIfError2(clean, GraphicsDeviceRef_createSampler(twm->device, nearestSampler, false, NULL, samplerNames[0], &twm->nearest))
+	gotoIfError2(clean, GraphicsDeviceRef_createSampler(twm->device, linearSampler, false, NULL, samplerNames[1], &twm->linear))
+	gotoIfError2(clean, GraphicsDeviceRef_createSampler(
+		twm->device, anisotropicSampler, false, NULL, samplerNames[2], &twm->anisotropic
+	))
 
 	//Load all sections in rt_core
 
@@ -1023,6 +1036,7 @@ void onManagerCreate(WindowManager *manager) {
 			(ETextureFormatId) bmpInfo.textureFormatId,
 			EGraphicsResourceFlag_ShaderRead,
 			(U16)bmpInfo.w, (U16)bmpInfo.h, 1,
+			NULL,
 			CharString_createRefCStrConst("Crabbage.bmp 600x"),
 			&tempBuffers[2],
 			&twm->crabbage2049x
@@ -1052,6 +1066,7 @@ void onManagerCreate(WindowManager *manager) {
 				ddsInfo.textureFormatId,
 				EGraphicsResourceFlag_ShaderRead,
 				(U16)ddsInfo.w, (U16)ddsInfo.h, (U16)ddsInfo.l,
+				NULL,
 				CharString_createRefCStrConst("Crabbage_mips.dds"),
 				&subResource.ptrNonConst[0].data,
 				&twm->crabbageCompressed
@@ -1095,6 +1110,8 @@ void onManagerCreate(WindowManager *manager) {
 			tmpBinaries[0],
 			CharString_createRefCStrConst("Prepare indirect pipeline"),
 			main,
+			EPipelineFlags_None,
+			NULL,
 			&twm->prepareIndirectPipeline,
 			e_rr
 		))
@@ -1122,6 +1139,8 @@ void onManagerCreate(WindowManager *manager) {
 			tmpBinaries[0],
 			CharString_createRefCStrConst("Indirect compute dispatch"),
 			main,
+			EPipelineFlags_None,
+			NULL,
 			&twm->indirectCompute,
 			e_rr
 		))
@@ -1160,6 +1179,8 @@ void onManagerCreate(WindowManager *manager) {
 				tmpBinaries[0],
 				CharString_createRefCStrConst("Inline raytracing test"),
 				main,
+				EPipelineFlags_None,
+				NULL,
 				&twm->inlineRaytracingTest,
 				e_rr
 			))
@@ -1254,6 +1275,8 @@ void onManagerCreate(WindowManager *manager) {
 			&stages,
 			info,
 			CharString_createRefCStrConst("Test graphics pipeline"),
+			EPipelineFlags_None,
+			NULL,
 			&twm->graphicsTest,
 			e_rr
 		))
@@ -1280,6 +1303,8 @@ void onManagerCreate(WindowManager *manager) {
 			&stages,
 			info,
 			CharString_createRefCStrConst("Test graphics depth pipeline"),
+			EPipelineFlags_None,
+			NULL,
 			&twm->graphicsDepthTest,
 			e_rr
 		))
@@ -1301,6 +1326,8 @@ void onManagerCreate(WindowManager *manager) {
 			&stages,
 			info,
 			CharString_createRefCStrConst("Test graphics depth pipeline MSAA"),
+			EPipelineFlags_None,
+			NULL,
 			&twm->graphicsDepthTestMSAA,
 			e_rr
 		))
@@ -1379,6 +1406,8 @@ void onManagerCreate(WindowManager *manager) {
 			&hitGroups,
 			info,
 			CharString_createRefCStrConst("Raytracing pipeline test"),
+			EPipelineFlags_None,
+			NULL,
 			&twm->raytracingPipelineTest,
 			e_rr
 		))
@@ -1465,19 +1494,19 @@ void onManagerCreate(WindowManager *manager) {
 	Buffer vertexData = Buffer_createRefConst(vertexPos, sizeof(vertexPos));
 	CharString name = CharString_createRefCStrConst("Vertex position buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, positionBufferAs, EGraphicsResourceFlag_None, name, &vertexData, &twm->vertexBuffers[0]
+		twm->device, positionBufferAs, EGraphicsResourceFlag_None, NULL, name, &vertexData, &twm->vertexBuffers[0]
 	))
 
 	vertexData = Buffer_createRefConst(vertDat, sizeof(vertDat));
 	name = CharString_createRefCStrConst("Vertex attribute buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, EDeviceBufferUsage_Vertex, EGraphicsResourceFlag_None, name, &vertexData, &twm->vertexBuffers[1]
+		twm->device, EDeviceBufferUsage_Vertex, EGraphicsResourceFlag_None, NULL, name, &vertexData, &twm->vertexBuffers[1]
 	))
 
 	Buffer indexData = Buffer_createRefConst(indexDat, sizeof(indexDat));
 	name = CharString_createRefCStrConst("Index buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
-		twm->device, indexBufferAs, EGraphicsResourceFlag_None, name, &indexData, &twm->indexBuffer
+		twm->device, indexBufferAs, EGraphicsResourceFlag_None, NULL, name, &indexData, &twm->indexBuffer
 	))
 
 	//Build BLASes & TLAS (only if inline RT is available)
@@ -1516,7 +1545,7 @@ void onManagerCreate(WindowManager *manager) {
 		Buffer aabbData = Buffer_createRefConst(aabbBuffer, sizeof(aabbBuffer));
 		name = CharString_createRefCStrConst("AABB buffer");
 		gotoIfError2(clean, GraphicsDeviceRef_createBufferData(
-			twm->device, EDeviceBufferUsage_ASReadExt, EGraphicsResourceFlag_None, name, &aabbData, &twm->aabbs
+			twm->device, EDeviceBufferUsage_ASReadExt, EGraphicsResourceFlag_None, NULL, name, &aabbData, &twm->aabbs
 		))
 
 		gotoIfError2(clean, GraphicsDeviceRef_createBLASProceduralExt(
@@ -1558,6 +1587,8 @@ void onManagerCreate(WindowManager *manager) {
 			ERTASBuildFlags_DefaultTLAS,
 			NULL,
 			instanceList,
+			false,
+			NULL,
 			CharString_createRefCStrConst("Test TLAS"),
 			&twm->tlas
 		))
@@ -1569,13 +1600,13 @@ void onManagerCreate(WindowManager *manager) {
 
 	name = CharString_createRefCStrConst("Test shader buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
-		twm->device, EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRW, name, sizeof(F32x4), &twm->deviceBuffer
+		twm->device, EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRWBindless, NULL, name, sizeof(F32x4), &twm->deviceBuffer
 	))
 
 	name = CharString_createRefCStrConst("View proj matrices buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
-		EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRW, name, sizeof(F32x4) * 4 * 3 * 2,
+		EDeviceBufferUsage_None, EGraphicsResourceFlag_ShaderRWBindless, NULL, name, sizeof(F32x4) * 4 * 3 * 2,
 		&twm->viewProjMatrices
 	))
 
@@ -1583,6 +1614,7 @@ void onManagerCreate(WindowManager *manager) {
 	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
 		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderWrite,
+		NULL,
 		name,
 		sizeof(DrawCallIndexed) * 2,
 		&twm->indirectDrawBuffer
@@ -1592,6 +1624,7 @@ void onManagerCreate(WindowManager *manager) {
 	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
 		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderWrite,
+		NULL,
 		name,
 		sizeof(Dispatch),
 		&twm->indirectDispatchBuffer

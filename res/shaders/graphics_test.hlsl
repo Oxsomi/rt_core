@@ -29,8 +29,11 @@ struct VSOutput {
 
 [[oxc::stage("vertex")]]
 VSOutput mainVS(F32x2 pos : TEXCOORD0, F32x2 uv : TEXCOORD1) {
+	
+	U32 orientation = getAppData1u(EResourceBinding_Orientation);
+
 	VSOutput output = (VSOutput) 0;
-	output.pos = F32x4(pos, 0, 1);
+	output.pos = mul(F32x4(pos, 0, 1), F32x4x4_rotateZ(orientation * F32_degToRad));
 	output.uv = uv;
 	return output;
 }

@@ -65,6 +65,29 @@ void mainRaygen() {
 
 	U32x2 id = DispatchRaysIndex().xy;
 	U32x2 dims = DispatchRaysDimensions().xy;
+	
+	U32 orientation = getAppData1u(EResourceBinding_Orientation);
+
+	U32x2 ogId = id;
+
+	switch(orientation) {
+
+		case 90:
+			dims = dims.yx;
+			id = id.yx;
+			id.y = dims.y - 1 - id.y;
+			break;
+
+		case 180:
+			id = dims - 1 - id;
+			break;
+
+		case 270:
+			dims = dims.yx;
+			id = id.yx;
+			id.x = dims.x - 1 - id.x;
+			break;
+	}
 
 	//Generate matrices
 
@@ -128,5 +151,5 @@ void mainRaygen() {
 	F32 exposure = exp2(-14);
 
 	if (payload.hitT >= 0)
-		tex[id] = F32x4(payload.color * exposure, 1);
+		tex[ogId] = F32x4(payload.color * exposure, 1);
 }

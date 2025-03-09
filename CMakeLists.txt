@@ -173,37 +173,21 @@ target_compile_definitions(rt_core PUBLIC -D_ENABLE_SIMD=${SIMD})
 target_link_libraries(rt_core PUBLIC oxc3::oxc3)
 set_target_properties(rt_core PROPERTIES FOLDER Oxsomi/test)
 
-if(DynamicLinkingGraphics AND WIN32)
-	set(shaderBinaryType "dxil,spv")
-else()
-	if(WIN32 AND NOT ForceVulkan)
-		set(shaderBinaryType "dxil")
-	else()
-		set(shaderBinaryType "spv")
-	endif()
-endif()
-
-if(CMAKE_HOST_WIN32)
-	add_virtual_files(
-		TARGET rt_core NAME shaders
-		ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
-		SELF ${CMAKE_CURRENT_SOURCE_DIR}
-		ARGS -threads "100%%" -compile-output ${shaderBinaryType}
-	)
-else()
-	add_virtual_files(
-		TARGET rt_core NAME shaders
-		ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
-		SELF ${CMAKE_CURRENT_SOURCE_DIR}
-		ARGS -threads "100%" -compile-output ${shaderBinaryType}
-	)
-endif()
+add_virtual_files(
+	TARGET rt_core NAME shaders
+	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/shaders
+	SELF ${CMAKE_CURRENT_SOURCE_DIR}
+	FORCE_PACKAGER
+)
 
 add_virtual_files(
 	TARGET rt_core NAME images
 	ROOT ${CMAKE_CURRENT_SOURCE_DIR}/res/images
 	SELF ${CMAKE_CURRENT_SOURCE_DIR}
+	FORCE_PACKAGER
 )
+
+add_virtual_dependencies_external(TARGET rt_core DEPENDENCIES oxc3)		# Link all resource dependencies
 
 configure_icon(rt_core "${CMAKE_CURRENT_SOURCE_DIR}/res/logo.ico")
 configure_virtual_files(rt_core)

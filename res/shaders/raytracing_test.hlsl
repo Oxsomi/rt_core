@@ -24,22 +24,45 @@
 [[oxc::extension("RayQuery")]]
 [[oxc::uniforms("X" = "Y")]]
 [numthreads(16, 8, 1)]
-void main(U32x2 i : SV_DispatchThreadID) {
+void main(U32x2 id : SV_DispatchThreadID) {
 
 	RWTexture2D<unorm F32x4> tex = rwTexture2DUniform(getAppData1u(EResourceBinding_RenderTargetRW));
 
 	U32x2 dims;
 	tex.GetDimensions(dims.x, dims.y);
 
-	if(any(i >= dims))
+	if(any(id >= dims))
 		return;
+
+	U32 orientation = getAppData1u(EResourceBinding_Orientation);
+	
+	U32x2 ogId = id;
+
+	switch(orientation) {
+
+		case 90:
+			dims = dims.yx;
+			id = id.yx;
+			id.y = dims.y - 1 - id.y;
+			break;
+
+		case 180:
+			id = dims - 1 - id;
+			break;
+
+		case 270:
+			dims = dims.yx;
+			id = id.yx;
+			id.x = dims.x - 1 - id.x;
+			break;
+	}
 
 	//Generate primaries
 
 	U32 viewProjMat = getAppData1u(EResourceBinding_ViewProjMatrices);
 	ViewProjMatrices mats = getAtUniform<ViewProjMatrices>(viewProjMat, 0);
 
-	F32x2 uv = (F32x2(i) + 0.5) / F32x2(dims);
+	F32x2 uv = (F32x2(id) + 0.5) / F32x2(dims);
 
 	F32x3 eye = mul(F32x4(0.xxx, 1), mats.viewInv).xyz;
 
@@ -75,5 +98,5 @@ void main(U32x2 i : SV_DispatchThreadID) {
 		else color = F32x3(0.25, 0.5, 1);
 	}
 
-	tex[i] = F32x4(color, 1);
+	tex[ogId] = F32x4(color, 1);
 }

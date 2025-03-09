@@ -36,7 +36,7 @@ enum EResourceBinding {
 	EResourceBinding_Sampler,
 	EResourceBinding_TLAS,
 	EResourceBinding_RenderTargetRW,
-	EResourceBinding_Padding0,
+	EResourceBinding_Orientation,
 
 	EResourceBinding_SunDirXYZ,
 	EResourceBinding_Padding1,
