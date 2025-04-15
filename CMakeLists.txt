@@ -190,5 +190,4 @@ add_virtual_files(
 add_virtual_dependencies_external(TARGET rt_core DEPENDENCIES oxc3)		# Link all resource dependencies
 
 configure_icon(rt_core "${CMAKE_CURRENT_SOURCE_DIR}/res/logo.ico")
-configure_virtual_files(rt_core)
 apply_dependencies(rt_core)

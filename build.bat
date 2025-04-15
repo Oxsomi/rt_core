@@ -3,7 +3,9 @@ setlocal enabledelayedexpansion
 
 if NOT "%1" == "Debug" (
 	if NOT "%1" == "Release" (
-		goto usage
+		if NOT "%1" == "RelWithDebInfo" (
+			goto usage
+		)
 	)
 )
 
@@ -75,4 +77,4 @@ conan build . -s build_type=%1 -o "&:forceVulkan=%3" -o "&:enableSIMD=%2" -o "&:
 goto :eof
 
 :usage
-	echo Usage: build [Build type: Debug/Release] [Enable SIMD: True/False] [Force Vulkan: True/False] [In repo compile: True/False] [Dynamic linking: True/False]
+	echo Usage: build [Build type: Debug/Release/RelWithDebInfo] [Enable SIMD: True/False] [Force Vulkan: True/False] [In repo compile: True/False] [Dynamic linking: True/False]

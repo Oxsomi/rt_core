@@ -562,6 +562,7 @@ generateCommands:
 	if(hasSwapchain) {
 
 		enum EScopes {
+			EScopes_ClearTarget,
 			EScopes_RaytracingTest,
 			EScopes_RaytracingPipelineTest,
 			EScopes_GraphicsTest,
@@ -573,6 +574,7 @@ generateCommands:
 		};
 
 		CharString names[] = {
+			CharString_createRefCStrConst("ClearTarget"),
 			CharString_createRefCStrConst("RaytracingTest"),
 			CharString_createRefCStrConst("RaytracingPipelineTest"),
 			CharString_createRefCStrConst("GraphicsTest"),
@@ -591,9 +593,27 @@ generateCommands:
 		gotoIfError2(clean, ListTransition_createRefConst(transitions, 5, &transitionArr))
 		gotoIfError2(clean, ListCommandScopeDependency_createRefConst(deps, 3, &depsArr))
 
-		//Test raytracing
+		//Raytracing overwrites render target, so we need to clear it first
 
 		Bool hasRaytracing = twm->enableRt;
+
+		if (hasRaytracing)
+			if(!CommandListRef_startScope(
+				commandList, (ListTransition) { 0 }, EScopes_ClearTarget, (ListCommandScopeDependency) { 0 }
+			).genericError) {
+
+				gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 0, 1), names[0]))
+
+				gotoIfError2(clean, CommandListRef_clearImagef(
+					commandList, F32x4_zero(), (ImageRange) { 0 }, tw->renderTexture
+				))
+
+				gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
+				gotoIfError2(clean, CommandListRef_endScope(commandList))
+			}
+
+		//Test raytracing
+
 		Bool disable = hasRaytracing;
 
 		if(disable && hasRaytracing) {
@@ -616,11 +636,12 @@ generateCommands:
 				.isWrite = true
 			};
 
-			depsArr.length = 0;
+			deps[0] = (CommandScopeDependency) { .id = EScopes_ClearTarget };
+			depsArr.length = 1;
 			transitionArr.length = 3;
 
 			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingTest, depsArr).genericError) {
-				gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 0, 1), names[0]))
+				gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 0, 1), names[1]))
 				gotoIfError2(clean, CommandListRef_setComputePipeline(commandList, twm->inlineRaytracingTest))
 				gotoIfError2(clean, CommandListRef_dispatch2D(commandList, (width + 15) >> 4, (height + 7) >> 3))
 				gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
@@ -650,7 +671,7 @@ generateCommands:
 			transitionArr.length = 3;
 
 			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_RaytracingPipelineTest, depsArr).genericError) {
-				gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 1, 0, 1), names[1]))
+				gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 1, 0, 1), names[2]))
 				gotoIfError2(clean, CommandListRef_setRaytracingPipeline(commandList, twm->raytracingPipelineTest))
 				gotoIfError2(clean, CommandListRef_dispatch2DRaysExt(commandList, 0, width, height))
 				gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
@@ -689,7 +710,7 @@ generateCommands:
 
 		if(disable && !CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
 
-			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 0, 1, 1), names[2]))
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 0, 1, 1), names[3]))
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
 				.image = tw->renderTexture,
@@ -772,7 +793,7 @@ generateCommands:
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTestMSAA, depsArr).genericError) {
 
-			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 1, 1, 1), names[4]))
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 1, 1, 1), names[5]))
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
 				.image = tw->renderTextureMSAA,
@@ -821,7 +842,7 @@ generateCommands:
 
 		if(disable && !CommandListRef_startScope(commandList, transitionArr, EScopes_Copy, depsArr).genericError) {
 
-			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 1, 1), names[3]))
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 1, 1), names[4]))
 
 			gotoIfError2(clean, CommandListRef_copyImage(
 				commandList, tw->renderTexture, tw->swapchain, (CopyImageRegion) { 0 }
@@ -840,7 +861,7 @@ generateCommands:
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Copy2, depsArr).genericError) {
 
-			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 1, 1, 1), names[5]))
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 1, 1, 1), names[6]))
 
 			gotoIfError2(clean, CommandListRef_copyImage(
 				commandList, tw->renderTextureMSAATarget, tw->swapchain, (CopyImageRegion) { .outputRotation = w->orientation / 90 }
@@ -858,7 +879,7 @@ generateCommands:
 
 		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Clear, depsArr).genericError) {
 
-			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 0, 0, 1), names[6]))
+			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 0, 0, 1), names[7]))
 
 			gotoIfError2(clean, CommandListRef_clearImagef(
 				commandList, F32x4_create4(0, 1, 0, 1), (ImageRange) { 0 }, tw->renderTextureMSAATarget
@@ -870,21 +891,26 @@ generateCommands:
 
 		//Copy3 (needs separate scope to handle write hazard)
 
-		deps[0] = (CommandScopeDependency) { .id = EScopes_Clear };
-		depsArr.length = 1;
-		transitionArr.length = 0;
+		UnifiedTexture tex = TextureRef_getUnifiedTexture(tw->renderTextureMSAATarget, NULL);
 
-		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Copy3, depsArr).genericError) {
+		if(I32x2_all(I32x2_leq(I32x2_add(I32x2_create2(tex.width, tex.height), I32x2_xx2(256)), w->size))) {
 
-			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0.5, 0.5, 0.5, 1), names[7]))
+			deps[0] = (CommandScopeDependency) { .id = EScopes_Clear };
+			depsArr.length = 1;
+			transitionArr.length = 0;
+
+			if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Copy3, depsArr).genericError) {
+
+				gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0.5, 0.5, 0.5, 1), names[8]))
 			
-			gotoIfError2(clean, CommandListRef_copyImage(
-				commandList, tw->renderTextureMSAATarget, tw->swapchain,
-				(CopyImageRegion) { .dstX = 256, .dstY = 256, .outputRotation = w->orientation / 90 }
-			))
+				gotoIfError2(clean, CommandListRef_copyImage(
+					commandList, tw->renderTextureMSAATarget, tw->swapchain,
+					(CopyImageRegion) { .dstX = 256, .dstY = 256, .outputRotation = w->orientation / 90 }
+				))
 
-			gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
-			gotoIfError2(clean, CommandListRef_endScope(commandList))
+				gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
+				gotoIfError2(clean, CommandListRef_endScope(commandList))
+			}
 		}
 	}
 
@@ -1034,7 +1060,7 @@ void onManagerCreate(WindowManager *manager) {
 			twm->device,
 			ETextureType_2D,
 			(ETextureFormatId) bmpInfo.textureFormatId,
-			EGraphicsResourceFlag_ShaderRead,
+			EGraphicsResourceFlag_ShaderReadBindless,
 			(U16)bmpInfo.w, (U16)bmpInfo.h, 1,
 			NULL,
 			CharString_createRefCStrConst("Crabbage.bmp 600x"),
@@ -1064,7 +1090,7 @@ void onManagerCreate(WindowManager *manager) {
 				twm->device,
 				ddsInfo.type,
 				ddsInfo.textureFormatId,
-				EGraphicsResourceFlag_ShaderRead,
+				EGraphicsResourceFlag_ShaderReadBindless,
 				(U16)ddsInfo.w, (U16)ddsInfo.h, (U16)ddsInfo.l,
 				NULL,
 				CharString_createRefCStrConst("Crabbage_mips.dds"),
@@ -1613,7 +1639,7 @@ void onManagerCreate(WindowManager *manager) {
 	name = CharString_createRefCStrConst("Test indirect draw buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
-		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderWrite,
+		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderRWBindless,
 		NULL,
 		name,
 		sizeof(DrawCallIndexed) * 2,
@@ -1623,7 +1649,7 @@ void onManagerCreate(WindowManager *manager) {
 	name = CharString_createRefCStrConst("Test indirect dispatch buffer");
 	gotoIfError2(clean, GraphicsDeviceRef_createBuffer(
 		twm->device,
-		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderWrite,
+		EDeviceBufferUsage_Indirect, EGraphicsResourceFlag_ShaderWriteBindless,
 		NULL,
 		name,
 		sizeof(Dispatch),
