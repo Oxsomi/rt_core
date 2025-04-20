@@ -50,6 +50,7 @@ class rt_core(ConanFile):
 		tc = CMakeToolchain(self)
 		tc.cache_variables["ForceVulkan"] = self.options.forceVulkan
 		tc.cache_variables["DynamicLinkingGraphics"] = self.options.dynamicLinkingGraphics
+		tc.cache_variables["EnableSIMD"] = self.options.enableSIMD
 		tc.cache_variables["CMAKE_CONFIGURATION_TYPES"] = str(self.settings.build_type)
 		tc.generate()
 
