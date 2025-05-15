@@ -1182,20 +1182,22 @@ void onManagerCreate(WindowManager *manager) {
 			gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
 			gotoIfError3(clean, SHFile_readx(tempBuffers[0], false, &tmpBinaries[0], e_rr))
 
-			CharString uniformsArr[2];
-			uniformsArr[0] = CharString_createRefCStrConst("X");
-			uniformsArr[1] = CharString_createRefCStrConst("Y");
+			//TODO: Turn this into uniforms
 
-			ListCharString uniforms = (ListCharString) { 0 };
+			CharString definesArr[2];
+			definesArr[0] = CharString_createRefCStrConst("X");
+			definesArr[1] = CharString_createRefCStrConst("Y");
+
+			ListCharString defines = (ListCharString) { 0 };
 			gotoIfError2(clean, ListCharString_createRefConst(
-				uniformsArr, sizeof(uniformsArr) / sizeof(uniformsArr[0]), &uniforms
+				definesArr, sizeof(definesArr) / sizeof(definesArr[0]), &defines
 			))
 
 			main = GraphicsDeviceRef_getFirstShaderEntry(
 				twm->device,
 				tmpBinaries[0],
 				CharString_createRefCStrConst("main"),
-				uniforms,
+				defines,
 				ESHExtension_None,
 				ESHExtension_None
 			);

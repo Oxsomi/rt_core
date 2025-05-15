@@ -27,7 +27,7 @@ def main():
 
 	parser.add_argument("-mode", type=str, default="Release", choices=["Release", "Debug", "RelWithDebInfo", "MinSizeRel"], help="Build mode")
 	parser.add_argument("-arch", type=str, default="all", choices=["arm64", "x64", "all"], help="Architecture")
-	parser.add_argument("-api", type=int, default=29, help="Android api level (e.g. 29 = Android 10)")
+	parser.add_argument("-api", type=int, default=31, help="Android api level (e.g. 31 = Android 12)")
 	parser.add_argument("-generator", type=str, help="CMake Generator")
 	
 	parser.add_argument("-keystore", type=str, help="Keystore location", default=None)
