@@ -91,9 +91,9 @@ typedef struct TestWindowManager {
 
 	F32 timeStep;
 	Bool renderVirtual;
-	Bool enableRt;
+	Bool enableRtPipeline;
 	Bool initialized;
-	U8 pad[1];
+	Bool enableRtInline;
 
 	Ns lastTime;
 
@@ -595,9 +595,9 @@ generateCommands:
 
 		//Raytracing overwrites render target, so we need to clear it first
 
-		Bool hasRaytracing = twm->enableRt;
+		Bool hasAnyRaytracing = twm->enableRtPipeline || twm->enableRtInline;
 
-		if (hasRaytracing)
+		if (hasAnyRaytracing)
 			if(!CommandListRef_startScope(
 				commandList, (ListTransition) { 0 }, EScopes_ClearTarget, (ListCommandScopeDependency) { 0 }
 			).genericError) {
@@ -605,7 +605,7 @@ generateCommands:
 				gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 0, 1), names[0]))
 
 				gotoIfError2(clean, CommandListRef_clearImagef(
-					commandList, F32x4_zero(), (ImageRange) { 0 }, tw->renderTexture
+					commandList, F32x4_create4(0.25f, 0.5f, 1, 1), (ImageRange) { 0 }, tw->renderTexture
 				))
 
 				gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
@@ -614,9 +614,7 @@ generateCommands:
 
 		//Test raytracing
 
-		Bool disable = hasRaytracing;
-
-		if(disable && hasRaytracing) {
+		if(twm->enableRtInline) {
 
 			//Write using inline RT
 
@@ -647,6 +645,9 @@ generateCommands:
 				gotoIfError2(clean, CommandListRef_endRegionDebugExt(commandList))
 				gotoIfError2(clean, CommandListRef_endScope(commandList))
 			}
+		}
+
+		if(twm->enableRtPipeline) {
 
 			//Write using raytracing pipelines
 
@@ -708,14 +709,14 @@ generateCommands:
 		depsArr.length = 2;
 		transitionArr.length = 5;
 
-		if(disable && !CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_GraphicsTest, depsArr).genericError) {
 
 			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(0, 0, 1, 1), names[3]))
 
 			AttachmentInfo attachmentInfo = (AttachmentInfo) {
 				.image = tw->renderTexture,
 				.unusedAfterRender = false,
-				.load = hasRaytracing ? ELoadAttachmentType_Preserve : ELoadAttachmentType_Clear,
+				.load = hasAnyRaytracing ? ELoadAttachmentType_Preserve : ELoadAttachmentType_Clear,
 				.color = { .colorf = { 0.25f, 0.5f, 1, 1 } }
 			};
 
@@ -840,7 +841,7 @@ generateCommands:
 		depsArr.length = 2;
 		transitionArr.length = 0;
 
-		if(disable && !CommandListRef_startScope(commandList, transitionArr, EScopes_Copy, depsArr).genericError) {
+		if(!CommandListRef_startScope(commandList, transitionArr, EScopes_Copy, depsArr).genericError) {
 
 			gotoIfError2(clean, CommandListRef_startRegionDebugExt(commandList, F32x4_create4(1, 0, 1, 1), names[4]))
 
@@ -989,7 +990,7 @@ void onManagerCreate(WindowManager *manager) {
 	
 	gotoIfError2(clean, GraphicsInstance_create(
 		applicationInfo,
-		EGraphicsApi_Direct3D12,
+		EGraphicsApi_Vulkan,
 		EGraphicsInstanceFlags_None,
 		&twm->instance
 	))
@@ -1016,7 +1017,8 @@ void onManagerCreate(WindowManager *manager) {
 		&twm->device
 	))
 
-	twm->enableRt = !!(deviceInfo.capabilities.features & (EGraphicsFeatures_RayQuery | EGraphicsFeatures_RayPipeline));
+	twm->enableRtPipeline = !!(deviceInfo.capabilities.features & EGraphicsFeatures_RayPipeline);
+	twm->enableRtInline   = !!(deviceInfo.capabilities.features & EGraphicsFeatures_RayQuery);
 
 	//Create samplers
 
@@ -1176,7 +1178,7 @@ void onManagerCreate(WindowManager *manager) {
 
 		//Inline raytracing test
 
-		if (twm->enableRt) {
+		if (twm->enableRtInline) {
 			
 			path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_test.oiSH");
 			gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
@@ -1370,7 +1372,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	Log_debugLnx("Create raytracing pipelines");
 
-	if (twm->enableRt) {
+	if (twm->enableRtPipeline) {
 
 		CharString path = CharString_createRefCStrConst("//rt_core/shaders/raytracing_pipeline_test.oiSH");
 		gotoIfError3(clean, File_readx(path, U64_MAX, 0, 0, &tempBuffers[0], e_rr))
@@ -1511,7 +1513,7 @@ void onManagerCreate(WindowManager *manager) {
 
 	EDeviceBufferUsage asFlag = (EDeviceBufferUsage) 0;
 
-	if(twm->enableRt)
+	if(twm->enableRtPipeline || twm->enableRtInline)
 		asFlag |= EDeviceBufferUsage_ASReadExt;
 
 	EDeviceBufferUsage positionBufferAs = EDeviceBufferUsage_Vertex | asFlag;
@@ -1541,7 +1543,7 @@ void onManagerCreate(WindowManager *manager) {
 	
 	Log_debugLnx("Create BLAS/TLAS");
 
-	if(twm->enableRt) {
+	if(twm->enableRtPipeline || twm->enableRtInline) {
 
 		//Build BLAS around first quad
 
@@ -1673,7 +1675,7 @@ void onManagerCreate(WindowManager *manager) {
 	CommandScopeDependency deps[3] = { 0 };
 	gotoIfError2(clean, ListCommandScopeDependency_createRefConst(deps, 1, &depsArr))
 
-	if(twm->enableRt) {
+	if(twm->enableRtPipeline || twm->enableRtInline) {
 
 		depsArr.length = 0;
 		if(!CommandListRef_startScope(commandList, transitionArr, 0 /* id */, depsArr).genericError) {
