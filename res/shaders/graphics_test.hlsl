@@ -27,7 +27,7 @@ struct VSOutput {
 	F32x2 uv : TEXCOORD0;
 };
 
-[[oxc::stage("vertex")]]
+[shader("vertex")]
 VSOutput mainVS(F32x2 pos : TEXCOORD0, F32x2 uv : TEXCOORD1) {
 	
 	U32 orientation = getAppData1u(EResourceBinding_Orientation);
@@ -38,7 +38,7 @@ VSOutput mainVS(F32x2 pos : TEXCOORD0, F32x2 uv : TEXCOORD1) {
 	return output;
 }
 
-[[oxc::stage("pixel")]]
+[shader("pixel")]
 F32x4 mainPS(VSOutput input): SV_TARGET {
 
 	U32 resourceId = getAppData1u(EResourceBinding_ConstantColorBuffer);

@@ -20,9 +20,17 @@
 
 #include "resource_bindings.hlsli"
 
-[[oxc::stage("compute")]]
 [[oxc::extension("RayQuery")]]
-[[oxc::uniforms("X" = "Y")]]
+[[oxc::defines("X" = "Y")]]
+[[oxc::uniforms(
+	B1 dummy = true,
+	U8 test = 123,
+	I8 val = -123,
+	F16 test2 = 32.43,
+	U8x3 test3 = (1, 2, 3),
+	U8x3x3 test4 = ((0, 1, 2), (3, 4, 5), (6, 7, 8))
+)]]
+[shader("compute")]
 [numthreads(16, 8, 1)]
 void main(U32x2 id : SV_DispatchThreadID) {
 

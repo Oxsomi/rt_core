@@ -67,8 +67,8 @@ Texture2D<unorm float> _test69[2][2];
 	[[vk::input_attachment_index(1)]] SubpassInput input;
 #endif
 
-[[oxc::stage("compute")]]
 [[oxc::extension("16BitTypes", "F64", "I64")]]
+[shader("compute")]
 [numthreads(1, 1, 1)]
 void main(uint2 id : SV_DispatchThreadID) {
 	_output[id] = _c.xxxx + _multiSample[0.xx].xxxx;

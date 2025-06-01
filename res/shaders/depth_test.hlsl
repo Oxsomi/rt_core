@@ -36,7 +36,7 @@ static const U32 quadIndices[] = {
 	00264		//Left
 };
 
-[[oxc::stage("vertex")]]
+[shader("vertex")]
 VSOutput mainVS(U32 id : SV_VertexID, U32 instanceId : SV_InstanceID) {
 
 	//Generate quad

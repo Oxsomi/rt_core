@@ -20,9 +20,9 @@
 
 #include "resource_bindings.hlsli"
 
-[[oxc::stage("compute")]]
 [[oxc::extension("I64")]]
 [[oxc::extension("F64")]]
+[shader("compute")]
 [numthreads(256, 1, 1)]
 void main(U32 i : SV_DispatchThreadID) {
 

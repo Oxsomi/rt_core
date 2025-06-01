@@ -9,8 +9,8 @@ struct Nicu {
 
 RWStructuredBuffer<Nicu> _sbuffer0;
 
-[[oxc::stage("compute")]]
 [[oxc::extension("16BitTypes", "I64")]]
+[shader("compute")]
 [numthreads(1, 1, 1)]
 void main(uint id : SV_DispatchThreadID) {
 	_sbuffer0[id].a = 123;
