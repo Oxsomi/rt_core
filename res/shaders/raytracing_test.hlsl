@@ -26,9 +26,7 @@
 	B1 dummy = true,
 	U8 test = 123,
 	I8 val = -123,
-	F16 test2 = 32.43,
-	U8x3 test3 = (1, 2, 3),
-	U8x3x3 test4 = ((0, 1, 2), (3, 4, 5), (6, 7, 8))
+	F16 test2 = 32.43
 )]]
 [shader("compute")]
 [numthreads(16, 8, 1)]
